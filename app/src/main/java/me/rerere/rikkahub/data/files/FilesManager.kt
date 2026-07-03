@@ -18,7 +18,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
-import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.utils.exportImage
@@ -30,12 +29,10 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 class FilesManager(
     private val context: Context,
     private val repository: FilesRepository,
-    private val messageNodeDAO: MessageNodeDAO,
     private val appScope: AppScope,
 ) {
     companion object {
         private const val TAG = "FilesManager"
-        const val DEFAULT_UPLOAD_RETENTION_MILLIS: Long = 5L * 24 * 60 * 60 * 1000
     }
 
     suspend fun saveManagedFromUri(
@@ -363,81 +360,6 @@ class FilesManager(
         repository.deleteById(id) > 0
     }
 
-    suspend fun cleanupExpiredUploads(
-        maxAgeMillis: Long = DEFAULT_UPLOAD_RETENTION_MILLIS,
-        nowMillis: Long = System.currentTimeMillis(),
-        extraReferencedUris: Set<String> = emptySet(),
-    ): Int = withContext(Dispatchers.IO) {
-        val uploadDir = File(context.filesDir, FileFolders.UPLOAD)
-        if (!uploadDir.exists() || !uploadDir.isDirectory) {
-            repository.deleteByFolder(FileFolders.UPLOAD)
-            return@withContext 0
-        }
-
-        val knownPaths = mutableSetOf<String>()
-        var deleted = 0
-        list(FileFolders.UPLOAD).forEach { entity ->
-            knownPaths.add(entity.relativePath)
-            val file = getFile(entity)
-            val fileUri = file.toUri().toString()
-            if (fileUri in extraReferencedUris) return@forEach
-            val timestamp = file.lastModified().takeIf { file.exists() && it > 0 } ?: entity.updatedAt
-            if (UploadCleanupPolicy.isExpired(timestamp, nowMillis, maxAgeMillis)) {
-                if (file.exists()) {
-                    runCatching { file.delete() }.onFailure {
-                        Log.e(TAG, "cleanupExpiredUploads: failed to delete ${file.absolutePath}", it)
-                    }
-                }
-                repository.deleteById(entity.id)
-                deleted++
-            }
-        }
-
-        uploadDir.listFiles()?.forEach { file ->
-            if (!file.isFile) return@forEach
-            val relativePath = buildRelativePath(FileFolders.UPLOAD, file)
-            if (relativePath in knownPaths) return@forEach
-            if (UploadCleanupPolicy.isExpired(file.lastModified(), nowMillis, maxAgeMillis)) {
-                runCatching {
-                    if (file.delete()) {
-                        deleted++
-                    }
-                }.onFailure {
-                    Log.e(TAG, "cleanupExpiredUploads: failed to delete untracked ${file.absolutePath}", it)
-                }
-            }
-        }
-
-        deleted
-    }
-
-    suspend fun cleanupUnreferencedUploads(
-        extraReferencedUris: Set<String> = emptySet(),
-    ): Int = withContext(Dispatchers.IO) {
-        val uploadDir = File(context.filesDir, FileFolders.UPLOAD)
-        if (!uploadDir.exists() || !uploadDir.isDirectory) {
-            repository.deleteByFolder(FileFolders.UPLOAD)
-            return@withContext 0
-        }
-
-        var deleted = 0
-        list(FileFolders.UPLOAD).forEach { entity ->
-            val file = getFile(entity)
-            val fileUri = file.toUri().toString()
-            val referenced = fileUri in extraReferencedUris || messageNodeDAO.existsMessageContaining(fileUri)
-            if (!referenced) {
-                if (file.exists()) {
-                    runCatching { file.delete() }.onFailure {
-                        Log.e(TAG, "cleanupUnreferencedUploads: failed to delete ${file.absolutePath}", it)
-                    }
-                }
-                repository.deleteById(entity.id)
-                deleted++
-            }
-        }
-        deleted
-    }
-
     private fun createTargetFile(folder: String, displayName: String, mimeType: String?): File {
         val dir = File(context.filesDir, folder)
         if (!dir.exists()) {
@@ -520,13 +442,6 @@ object FileFolders {
     const val SKILLS = "skills"
     const val FONTS = "fonts"
     const val TOOL_OUTPUTS = "tool_outputs"
-}
-
-object UploadCleanupPolicy {
-    fun isExpired(timestampMillis: Long, nowMillis: Long, maxAgeMillis: Long): Boolean {
-        if (timestampMillis <= 0 || maxAgeMillis <= 0) return false
-        return nowMillis - timestampMillis >= maxAgeMillis
-    }
 }
 
 suspend fun FilesManager.saveUploadFromUri(
