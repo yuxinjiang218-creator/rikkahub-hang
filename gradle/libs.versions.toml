@@ -120,6 +120,7 @@ coil-gif = { group = "io.coil-kt.coil3", name = "coil-gif", version.ref = "coil"
 coil-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil" }
 coil-cache-control = { group = "io.coil-kt.coil3", name = "coil-network-cache-control", version.ref = "coil" }
+androidsvg = { group = "com.caverock", name = "androidsvg-aar", version = "1.4" }
 quickjs = { group = "wang.harlon.quickjs", name = "wrapper-android", version.ref = "quickjs" }
 koin-bom = { group = "io.insert-koin", name = "koin-bom", version.ref = "koin-bom" }
 koin-android = { group = "io.insert-koin", name = "koin-android" }

@@ -1,6 +1,12 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.util.Base64
+import com.caverock.androidsvg.SVG
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -12,7 +18,6 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.toMetadata
-import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.generateUnifiedDiff
@@ -21,11 +26,17 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.java.KoinJavaComponent.getKoin
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
+private const val MAX_IMAGE_BYTES = 20L * 1024 * 1024
+private const val SVG_DEFAULT_SIZE = 1024
+private const val SVG_MAX_DIMENSION = 4096
 
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
@@ -62,6 +73,16 @@ private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp",
 
 private fun String.isImagePath(): Boolean =
     substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS
+
+private fun String.imageMimeTypeFromPath(): String? = when (substringAfterLast('.', "").lowercase()) {
+    "png" -> "image/png"
+    "jpg", "jpeg" -> "image/jpeg"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "bmp" -> "image/bmp"
+    "svg" -> "image/svg+xml"
+    else -> null
+}
 
 private fun createReadFileTool(
     workspaceId: String,
@@ -348,19 +369,80 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
         exportFile(workspaceId, area, relativePath, buffer)
         buffer.toByteArray()
     }
+    require(bytes.size <= MAX_IMAGE_BYTES) {
+        "Image is too large to view: $path (${bytes.size / 1024 / 1024}MB, max ${MAX_IMAGE_BYTES / 1024 / 1024}MB)."
+    }
 
-    val filesManager = getKoin().get<FilesManager>()
-    val uris = filesManager.createChatFilesByByteArrays(listOf(bytes))
+    val sourceMimeType = path.imageMimeTypeFromPath() ?: "image/png"
+    val encoded = encodeWorkspaceImageForVision(bytes, sourceMimeType)
     return listOf(
-        UIMessagePart.Image(url = uris.first().toString()),
+        UIMessagePart.Image(url = encoded.dataUrl),
         UIMessagePart.Text(
             buildJsonObject {
                 put("path", path)
+                put("mime_type", encoded.mimeType)
+                put("source_mime_type", sourceMimeType)
+                put("size_bytes", bytes.size)
                 put("description", "Image file read successfully")
                 put("visible_image", true)
             }.toString()
         ),
     )
+}
+
+private data class EncodedWorkspaceImage(
+    val mimeType: String,
+    val dataUrl: String,
+)
+
+private fun encodeWorkspaceImageForVision(bytes: ByteArray, mimeType: String): EncodedWorkspaceImage {
+    val (outputMimeType, outputBytes) = when (mimeType) {
+        "image/svg+xml" -> "image/png" to rasterizeSvgToPng(bytes)
+        "image/bmp" -> "image/png" to rasterizeBitmapToPng(bytes)
+        "image/webp" -> "image/png" to rasterizeBitmapToPng(bytes)
+        else -> mimeType to bytes
+    }
+    return EncodedWorkspaceImage(
+        mimeType = outputMimeType,
+        dataUrl = "data:$outputMimeType;base64,${Base64.encodeToString(outputBytes, Base64.NO_WRAP)}",
+    )
+}
+
+private fun rasterizeSvgToPng(bytes: ByteArray): ByteArray {
+    val svg = SVG.getFromInputStream(ByteArrayInputStream(bytes))
+    val viewBox = svg.documentViewBox
+    val rawWidth = svg.documentWidth.takeIf { it > 0f } ?: viewBox?.width() ?: SVG_DEFAULT_SIZE.toFloat()
+    val rawHeight = svg.documentHeight.takeIf { it > 0f } ?: viewBox?.height() ?: SVG_DEFAULT_SIZE.toFloat()
+    val scale = min(1f, SVG_MAX_DIMENSION / maxOf(rawWidth, rawHeight))
+    val width = (rawWidth * scale).roundToInt().coerceAtLeast(1).coerceAtMost(SVG_MAX_DIMENSION)
+    val height = (rawHeight * scale).roundToInt().coerceAtLeast(1).coerceAtMost(SVG_MAX_DIMENSION)
+    svg.setDocumentWidth(width.toFloat())
+    svg.setDocumentHeight(height.toFloat())
+
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    return bitmap.usePngBytes {
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.TRANSPARENT)
+        svg.renderToCanvas(canvas)
+    }
+}
+
+private fun rasterizeBitmapToPng(bytes: ByteArray): ByteArray {
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        ?: error("Failed to decode image bytes")
+    return bitmap.usePngBytes()
+}
+
+private inline fun Bitmap.usePngBytes(draw: () -> Unit = {}): ByteArray {
+    return try {
+        draw()
+        ByteArrayOutputStream().use { output ->
+            check(compress(Bitmap.CompressFormat.PNG, 100, output)) { "Failed to encode PNG image" }
+            output.toByteArray()
+        }
+    } finally {
+        recycle()
+    }
 }
 
 private fun resolveUploadFile(path: String): File? {

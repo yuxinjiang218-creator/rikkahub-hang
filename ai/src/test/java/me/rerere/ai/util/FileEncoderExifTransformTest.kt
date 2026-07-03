@@ -2,6 +2,7 @@ package me.rerere.ai.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import me.rerere.ai.ui.UIMessagePart
 
 class FileEncoderExifTransformTest {
 
@@ -58,6 +59,16 @@ class FileEncoderExifTransformTest {
         )
 
         assertEquals(2, sampleSize)
+    }
+
+    @Test
+    fun `data url should strip prefix when requested`() {
+        val encoded = UIMessagePart.Image("data:image/png;base64,abc123")
+            .encodeBase64(withPrefix = false)
+            .getOrThrow()
+
+        assertEquals("image/png", encoded.mimeType)
+        assertEquals("abc123", encoded.base64)
     }
 
     companion object {

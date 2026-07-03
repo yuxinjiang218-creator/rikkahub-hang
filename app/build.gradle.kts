@@ -219,6 +219,7 @@ dependencies {
     implementation(libs.coil.okhttp)
     implementation(libs.coil.svg)
     implementation(libs.coil.cache.control)
+    implementation(libs.androidsvg)
 
     // serialization
     implementation(libs.kotlinx.serialization.json)
