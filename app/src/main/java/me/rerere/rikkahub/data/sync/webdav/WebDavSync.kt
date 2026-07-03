@@ -12,8 +12,10 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
+import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.sync.BackupDatabaseExtractor
+import me.rerere.rikkahub.data.sync.BackupSkillsExtractor
 import me.rerere.rikkahub.utils.fileSizeToString
 import java.io.File
 import java.io.FileInputStream
@@ -33,6 +35,7 @@ class WebDavSync(
     private val context: Context,
     private val httpClient: HttpClient,
     private val conversationRepository: ConversationRepository,
+    private val skillManager: SkillManager,
 ) {
     private fun getClient(config: WebDavConfig): WebDavClient {
         return WebDavClient(config, httpClient)
@@ -224,6 +227,11 @@ class WebDavSync(
         } else {
             null
         }
+        val skillsExtractor = if (config.items.contains(WebDavConfig.BackupItem.FILES)) {
+            BackupSkillsExtractor(context, skillManager)
+        } else {
+            null
+        }
 
         try {
             ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
@@ -285,7 +293,7 @@ class WebDavSync(
                                 } else if (config.items.contains(WebDavConfig.BackupItem.FILES) &&
                                     zipEntry.name.startsWith("${FileFolders.SKILLS}/")
                                 ) {
-                                    restoreSkillEntry(zipIn, zipEntry.name)
+                                    skillsExtractor?.copySkillEntry(zipIn, zipEntry.name)
                                 } else if (config.items.contains(WebDavConfig.BackupItem.FILES) &&
                                     zipEntry.name.startsWith("${FileFolders.FONTS}/")
                                 ) {
@@ -313,8 +321,10 @@ class WebDavSync(
             }
 
             databaseExtractor?.mergeIfPresent()
+            skillsExtractor?.mergeIfPresent()
         } catch (e: Exception) {
             databaseExtractor?.cleanup()
+            skillsExtractor?.cleanup()
             throw e
         }
         Log.i(TAG, "restoreFromBackupFile: Restore completed successfully")

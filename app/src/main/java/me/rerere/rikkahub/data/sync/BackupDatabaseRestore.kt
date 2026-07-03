@@ -9,6 +9,9 @@ import me.rerere.rikkahub.data.db.migrations.Migration_13_14
 import me.rerere.rikkahub.data.db.migrations.Migration_14_15
 import me.rerere.rikkahub.data.db.migrations.Migration_15_16
 import me.rerere.rikkahub.data.db.migrations.Migration_6_7
+import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.data.files.SkillPaths
 import me.rerere.rikkahub.data.repository.BackupDatabaseMergeResult
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.io.File
@@ -62,6 +65,47 @@ internal class BackupDatabaseExtractor(
             backupDatabase.close()
             cleanup()
         }
+    }
+
+    fun cleanup() {
+        if (tempDir.exists()) {
+            tempDir.deleteRecursively()
+        }
+    }
+}
+
+internal class BackupSkillsExtractor(
+    context: Context,
+    private val skillManager: SkillManager,
+) {
+    private val tempDir = File(context.cacheDir, "backup_restore_skills_${System.nanoTime()}").apply {
+        mkdirs()
+    }
+
+    fun copySkillEntry(input: InputStream, entryName: String) {
+        val relativePath = entryName.substringAfter("${FileFolders.SKILLS}/")
+        val skillName = relativePath.substringBefore('/', missingDelimiterValue = "")
+        val skillRelativePath = relativePath.substringAfter('/', missingDelimiterValue = "")
+        if (skillName.isBlank() || skillRelativePath.isBlank()) {
+            Log.w(TAG, "copySkillEntry: invalid skill entry $entryName")
+            return
+        }
+
+        val skillDir = SkillPaths.resolveSkillDir(tempDir, skillName)
+            ?: error("Invalid skill directory: $entryName")
+        val targetFile = SkillPaths.resolveSkillFile(skillDir, skillRelativePath)
+            ?: error("Invalid skill file path: $entryName")
+        targetFile.parentFile?.mkdirs()
+        FileOutputStream(targetFile).use { output ->
+            input.copyTo(output)
+        }
+    }
+
+    fun mergeIfPresent() {
+        if (!tempDir.exists()) return
+        val result = skillManager.mergeSkillsFromBackup(tempDir)
+        Log.i(TAG, "mergeIfPresent skills: $result")
+        cleanup()
     }
 
     fun cleanup() {

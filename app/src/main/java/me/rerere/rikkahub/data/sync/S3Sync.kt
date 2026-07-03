@@ -11,6 +11,7 @@ import me.rerere.rikkahub.data.files.SkillPaths
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
+import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.sync.s3.S3Client
 import me.rerere.rikkahub.data.sync.s3.S3Config
@@ -33,6 +34,7 @@ class S3Sync(
     private val context: Context,
     private val httpClient: HttpClient,
     private val conversationRepository: ConversationRepository,
+    private val skillManager: SkillManager,
 ) {
     private fun getS3Client(config: S3Config): S3Client {
         return S3Client(config, httpClient)
@@ -200,6 +202,11 @@ class S3Sync(
         } else {
             null
         }
+        val skillsExtractor = if (config.items.contains(S3Config.BackupItem.FILES)) {
+            BackupSkillsExtractor(context, skillManager)
+        } else {
+            null
+        }
 
         try {
             ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
@@ -261,7 +268,7 @@ class S3Sync(
                                 } else if (config.items.contains(S3Config.BackupItem.FILES) &&
                                     zipEntry.name.startsWith("${FileFolders.SKILLS}/")
                                 ) {
-                                    restoreSkillEntry(zipIn, zipEntry.name)
+                                    skillsExtractor?.copySkillEntry(zipIn, zipEntry.name)
                                 } else if (config.items.contains(S3Config.BackupItem.FILES) &&
                                     zipEntry.name.startsWith("${FileFolders.FONTS}/")
                                 ) {
@@ -289,8 +296,10 @@ class S3Sync(
             }
 
             databaseExtractor?.mergeIfPresent()
+            skillsExtractor?.mergeIfPresent()
         } catch (e: Exception) {
             databaseExtractor?.cleanup()
+            skillsExtractor?.cleanup()
             throw e
         }
         Log.i(TAG, "restoreFromBackupFile: Restore completed successfully")

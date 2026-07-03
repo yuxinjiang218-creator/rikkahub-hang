@@ -213,6 +213,7 @@ val dataSourceModule = module {
             context = get(),
             httpClient = get(),
             conversationRepository = get(),
+            skillManager = get(),
         )
     }
 
@@ -238,6 +239,7 @@ val dataSourceModule = module {
             context = get(),
             httpClient = get(),
             conversationRepository = get(),
+            skillManager = get(),
         )
     }
 

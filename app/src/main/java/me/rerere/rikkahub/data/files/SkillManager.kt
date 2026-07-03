@@ -3,8 +3,11 @@ package me.rerere.rikkahub.data.files
 import android.content.Context
 import android.util.Log
 import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.datastore.SettingsStore
 
 class SkillManager(
@@ -13,11 +16,22 @@ class SkillManager(
 ) {
     companion object {
         private const val TAG = "SkillManager"
+        private const val BUNDLED_SKILLS_ASSET_ROOT = "builtin_skills"
+        private const val BUNDLED_SKILLS_MARKER_FILE = ".rikkahub-builtin-skills-installed"
+        const val SKILLS_SYNC_META_FILE = ".rikkahub-skills-meta.json"
     }
+
+    private val metadataJson = Json {
+        ignoreUnknownKeys = true
+        prettyPrint = true
+    }
+    private val bundledSkillDirectoryNames = listOf("skill-creator")
 
     fun getSkillsDir(): File {
         val dir = context.filesDir.resolve(FileFolders.SKILLS)
         if (!dir.exists()) dir.mkdirs()
+        ensureBundledSkillsInstalled(dir)
+        ensureSkillSyncIndex(dir)
         return dir
     }
 
@@ -51,6 +65,7 @@ class SkillManager(
         if (!saveSkillFileBytesAtomically(name, mapOf("SKILL.md" to content.toByteArray()))) {
             return null
         }
+        touchSkillSyncMetadata(name)
         val skillDir = resolveSkillDir(name) ?: return null
         return parseSkillFile(skillDir.resolve("SKILL.md"), skillDir)
     }
@@ -59,6 +74,7 @@ class SkillManager(
         val skillDir = resolveSkillDir(name) ?: return@withContext false
         val deleted = skillDir.deleteRecursively()
         if (deleted) {
+            removeSkillSyncMetadata(name)
             settingsStore.update { settings ->
                 settings.copy(
                     assistants = settings.assistants.map { assistant ->
@@ -106,6 +122,7 @@ class SkillManager(
         val target = SkillPaths.resolveSkillFile(skillDir, relativePath) ?: return false
         target.parentFile?.mkdirs()
         target.writeText(content)
+        touchSkillSyncMetadata(skillName)
         return true
     }
 
@@ -144,6 +161,7 @@ class SkillManager(
             }
 
             backupDir?.deleteRecursively()
+            touchSkillSyncMetadata(skillName)
             return true
         } catch (e: Exception) {
             Log.w(TAG, "saveSkillFilesAtomically: Failed to save $skillName", e)
@@ -164,12 +182,20 @@ class SkillManager(
     fun deleteSkillFile(skillName: String, relativePath: String): Boolean {
         val skillDir = resolveSkillDir(skillName) ?: return false
         val target = SkillPaths.resolveSkillFile(skillDir, relativePath) ?: return false
-        return target.delete()
+        val deleted = target.delete()
+        if (deleted) {
+            touchSkillSyncMetadata(skillName)
+        }
+        return deleted
     }
 
     fun resolveSkillFile(skillName: String, relativePath: String): File? {
         val skillDir = resolveSkillDir(skillName) ?: return null
         return SkillPaths.resolveSkillFile(skillDir, relativePath)
+    }
+
+    fun markSkillModified(skillName: String) {
+        touchSkillSyncMetadata(skillName)
     }
 
     private fun resolveSkillDir(skillName: String): File? {
@@ -184,6 +210,203 @@ class SkillManager(
             }
         }
         return null
+    }
+
+    fun mergeSkillsFromBackup(backupSkillsRoot: File): SkillMergeResult {
+        val skillsRoot = getSkillsDir()
+        val localIndex = ensureSkillSyncIndex(skillsRoot).skills.toMutableMap()
+        val backupIndex = readSkillSyncIndex(backupSkillsRoot).skills
+        var inserted = 0
+        var updated = 0
+        var skipped = 0
+
+        backupSkillsRoot.listFiles()
+            ?.filter { it.isDirectory && it.resolve("SKILL.md").exists() }
+            ?.sortedBy { it.name }
+            ?.forEach { backupDir ->
+                val skillName = backupDir.name
+                val localDir = SkillPaths.resolveSkillDir(skillsRoot, skillName)
+                    ?: run {
+                        skipped++
+                        return@forEach
+                    }
+                val backupHash = computeSkillContentHash(backupDir)
+                val backupMeta = backupIndex[skillName]
+                    ?: SkillSyncMetadata(updatedAt = 0L, contentHash = backupHash)
+
+                if (!localDir.exists()) {
+                    backupDir.copyRecursively(localDir, overwrite = true)
+                    localIndex[skillName] = backupMeta.copy(contentHash = backupHash)
+                    inserted++
+                    return@forEach
+                }
+
+                val localHash = computeSkillContentHash(localDir)
+                if (localHash == backupHash) {
+                    localIndex[skillName] = (localIndex[skillName] ?: SkillSyncMetadata()).copy(contentHash = localHash)
+                    skipped++
+                    return@forEach
+                }
+
+                val localUpdatedAt = localIndex[skillName]?.updatedAt ?: 0L
+                if (backupMeta.updatedAt > 0L && backupMeta.updatedAt > localUpdatedAt) {
+                    replaceSkillDirectory(localDir, backupDir)
+                    localIndex[skillName] = backupMeta.copy(contentHash = backupHash)
+                    updated++
+                } else {
+                    localIndex[skillName] = (localIndex[skillName] ?: SkillSyncMetadata()).copy(contentHash = localHash)
+                    skipped++
+                }
+            }
+
+        writeSkillSyncIndex(skillsRoot, SkillSyncIndex(skills = localIndex.filterExistingSkills(skillsRoot)))
+        return SkillMergeResult(
+            inserted = inserted,
+            updated = updated,
+            skipped = skipped,
+        )
+    }
+
+    private fun touchSkillSyncMetadata(skillName: String) {
+        val skillsRoot = getSkillsDir()
+        val skillDir = SkillPaths.resolveSkillDir(skillsRoot, skillName) ?: return
+        if (!skillDir.exists()) return
+        val index = readSkillSyncIndex(skillsRoot).skills.toMutableMap()
+        index[skillName] = SkillSyncMetadata(
+            updatedAt = System.currentTimeMillis(),
+            contentHash = computeSkillContentHash(skillDir),
+        )
+        writeSkillSyncIndex(skillsRoot, SkillSyncIndex(skills = index.filterExistingSkills(skillsRoot)))
+    }
+
+    private fun removeSkillSyncMetadata(skillName: String) {
+        val skillsRoot = getSkillsDir()
+        val index = readSkillSyncIndex(skillsRoot).skills.toMutableMap()
+        index.remove(skillName)
+        writeSkillSyncIndex(skillsRoot, SkillSyncIndex(skills = index.filterExistingSkills(skillsRoot)))
+    }
+
+    private fun ensureSkillSyncIndex(skillsRoot: File): SkillSyncIndex {
+        val existingIndex = readSkillSyncIndex(skillsRoot)
+        val next = existingIndex.skills.toMutableMap()
+        skillsRoot.listFiles()
+            ?.filter { it.isDirectory && it.resolve("SKILL.md").exists() }
+            ?.forEach { skillDir ->
+                if (skillDir.name !in next) {
+                    next[skillDir.name] = SkillSyncMetadata(
+                        updatedAt = 0L,
+                        contentHash = computeSkillContentHash(skillDir),
+                    )
+                }
+            }
+        val filtered = next.filterExistingSkills(skillsRoot)
+        val normalized = SkillSyncIndex(skills = filtered)
+        if (normalized != existingIndex) {
+            writeSkillSyncIndex(skillsRoot, normalized)
+        }
+        return normalized
+    }
+
+    private fun readSkillSyncIndex(skillsRoot: File): SkillSyncIndex {
+        val file = skillsRoot.resolve(SKILLS_SYNC_META_FILE)
+        if (!file.exists()) return SkillSyncIndex()
+        return runCatching {
+            metadataJson.decodeFromString<SkillSyncIndex>(file.readText())
+        }.getOrElse {
+            Log.w(TAG, "readSkillSyncIndex: Failed to read ${file.absolutePath}", it)
+            SkillSyncIndex()
+        }
+    }
+
+    private fun writeSkillSyncIndex(skillsRoot: File, index: SkillSyncIndex) {
+        skillsRoot.mkdirs()
+        skillsRoot.resolve(SKILLS_SYNC_META_FILE).writeText(metadataJson.encodeToString(index))
+    }
+
+    private fun Map<String, SkillSyncMetadata>.filterExistingSkills(skillsRoot: File): Map<String, SkillSyncMetadata> {
+        return filterKeys { skillName ->
+            skillsRoot.resolve(skillName).resolve("SKILL.md").exists()
+        }.toSortedMap()
+    }
+
+    private fun computeSkillContentHash(skillDir: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        skillDir.walkTopDown()
+            .filter { it.isFile && it.name != SKILLS_SYNC_META_FILE && it.name != BUNDLED_SKILLS_MARKER_FILE }
+            .map { it.relativeTo(skillDir).invariantSeparatorsPath to it }
+            .sortedBy { it.first }
+            .forEach { (relativePath, file) ->
+                digest.update(relativePath.toByteArray())
+                digest.update(0.toByte())
+                digest.update(file.readBytes())
+                digest.update(0.toByte())
+            }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    private fun replaceSkillDirectory(localDir: File, backupDir: File) {
+        val skillsRoot = localDir.parentFile ?: error("Skill directory has no parent: ${localDir.absolutePath}")
+        val backupLocalDir = createTempSkillDir(skillsRoot, localDir.name, "merge-backup")
+            ?: error("Failed to create temporary skill backup dir: ${localDir.name}")
+
+        try {
+            if (localDir.exists() && !localDir.renameTo(backupLocalDir)) {
+                error("Failed to move current skill dir: ${localDir.absolutePath}")
+            }
+            backupDir.copyRecursively(localDir, overwrite = true)
+            backupLocalDir.deleteRecursively()
+        } catch (e: Throwable) {
+            if (!localDir.exists() && backupLocalDir.exists()) {
+                backupLocalDir.renameTo(localDir)
+            }
+            throw e
+        } finally {
+            if (backupLocalDir.exists() && localDir.exists()) {
+                backupLocalDir.deleteRecursively()
+            }
+        }
+    }
+
+    private fun ensureBundledSkillsInstalled(skillsRoot: File) {
+        val installed = readBundledSkillsMarker(skillsRoot).toMutableSet()
+        var changed = false
+        bundledSkillDirectoryNames.forEach { directoryName ->
+            val targetDir = skillsRoot.resolve(directoryName)
+            if (targetDir.exists()) {
+                if (installed.add(directoryName)) changed = true
+                return@forEach
+            }
+            if (directoryName in installed) return@forEach
+            copyAssetDirectory("$BUNDLED_SKILLS_ASSET_ROOT/$directoryName", targetDir)
+            installed += directoryName
+            changed = true
+        }
+        if (changed) writeBundledSkillsMarker(skillsRoot, installed)
+    }
+
+    private fun readBundledSkillsMarker(skillsRoot: File): Set<String> {
+        val file = skillsRoot.resolve(BUNDLED_SKILLS_MARKER_FILE)
+        if (!file.exists()) return emptySet()
+        return file.readLines().mapTo(linkedSetOf()) { it.trim() }.filter { it.isNotBlank() }.toSet()
+    }
+
+    private fun writeBundledSkillsMarker(skillsRoot: File, installed: Set<String>) {
+        skillsRoot.resolve(BUNDLED_SKILLS_MARKER_FILE).writeText(installed.sorted().joinToString(separator = "\n"))
+    }
+
+    private fun copyAssetDirectory(assetPath: String, target: File) {
+        val children = context.assets.list(assetPath).orEmpty()
+        if (children.isEmpty()) {
+            target.parentFile?.mkdirs()
+            context.assets.open(assetPath).use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            return
+        }
+        target.mkdirs()
+        children.forEach { child ->
+            copyAssetDirectory("$assetPath/$child", target.resolve(child))
+        }
     }
 
     private fun parseSkillFile(skillFile: File, skillDir: File): SkillMetadata? {
@@ -215,6 +438,23 @@ data class SkillMetadata(
 ) {
     val skillFile: File get() = skillDir.resolve("SKILL.md")
 }
+
+@Serializable
+data class SkillSyncIndex(
+    val skills: Map<String, SkillSyncMetadata> = emptyMap(),
+)
+
+@Serializable
+data class SkillSyncMetadata(
+    val updatedAt: Long = 0L,
+    val contentHash: String = "",
+)
+
+data class SkillMergeResult(
+    val inserted: Int,
+    val updated: Int,
+    val skipped: Int,
+)
 
 object SkillFrontmatterParser {
     private val frontmatterEndRegex = Regex("""\r?\n---(?:\r?\n|$)""")
