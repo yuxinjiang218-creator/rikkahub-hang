@@ -184,6 +184,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         )
 
         val response = client.newCall(request).await()
+        params.attemptTracker.recordHttpStatus(response.code)
         if (!response.isSuccessful) {
             throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
         }
@@ -248,6 +249,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 type: String?,
                 data: String
             ) {
+                params.attemptTracker.recordStreamStarted()
                 Log.i(TAG, "onEvent: $data")
 
                 try {
@@ -303,6 +305,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 response: Response?
             ) {
                 var exception = t
+                params.attemptTracker.recordHttpStatus(response?.code)
 
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.message}")

@@ -135,6 +135,29 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                         },
                     )
                     item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_generation_retry_limit_title)) },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.generationRetryLimit.coerceIn(0, 10).toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(
+                                            displaySetting.copy(generationRetryLimit = it.toInt().coerceIn(0, 10))
+                                        )
+                                    },
+                                    valueRange = 0f..10f,
+                                    steps = 9,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${displaySetting.generationRetryLimit.coerceIn(0, 10)}")
+                            }
+                        },
+                    )
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_use_app_icon_style_loading_indicator_title)) },
                         supportingContent = {
                             Text(stringResource(R.string.setting_display_page_use_app_icon_style_loading_indicator_desc))

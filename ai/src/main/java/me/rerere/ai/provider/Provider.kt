@@ -2,6 +2,7 @@ package me.rerere.ai.provider
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
@@ -51,6 +52,29 @@ interface Provider<T : ProviderSetting> {
     }
 }
 
+class GenerationAttemptTracker {
+    var attempt: Int = 0
+        private set
+    var httpStatus: Int? = null
+        private set
+    var streamStarted: Boolean = false
+        private set
+
+    fun beginAttempt(attempt: Int) {
+        this.attempt = attempt
+        httpStatus = null
+        streamStarted = false
+    }
+
+    fun recordHttpStatus(status: Int?) {
+        httpStatus = status
+    }
+
+    fun recordStreamStarted() {
+        streamStarted = true
+    }
+}
+
 @Serializable
 data class TextGenerationParams(
     val model: Model,
@@ -61,6 +85,8 @@ data class TextGenerationParams(
     val reasoningLevel: ReasoningLevel = ReasoningLevel.OFF,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
+    @Transient
+    val attemptTracker: GenerationAttemptTracker = GenerationAttemptTracker(),
 )
 
 @Serializable

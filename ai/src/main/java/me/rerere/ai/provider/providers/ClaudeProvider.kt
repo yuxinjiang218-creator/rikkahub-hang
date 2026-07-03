@@ -121,6 +121,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
         val response = client.newCall(request).await()
+        params.attemptTracker.recordHttpStatus(response.code)
         if (!response.isSuccessful) {
             throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
         }
@@ -179,6 +180,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 type: String?,
                 data: String
             ) {
+                params.attemptTracker.recordStreamStarted()
                 Log.d(TAG, "onEvent: type=$type, data=$data")
                 if (data == "[DONE]") {
                     return
@@ -228,6 +230,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
+                params.attemptTracker.recordHttpStatus(response?.code)
 
                 t?.printStackTrace()
                 Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")

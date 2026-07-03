@@ -91,6 +91,7 @@ class ResponseAPI(
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
         val response = client.newCall(request).await()
+        params.attemptTracker.recordHttpStatus(response.code)
         if (!response.isSuccessful) {
             throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
         }
@@ -134,6 +135,7 @@ class ResponseAPI(
                 type: String?,
                 data: String
             ) {
+                params.attemptTracker.recordStreamStarted()
                 if (data == "[DONE]") {
                     close()
                     return
@@ -151,6 +153,7 @@ class ResponseAPI(
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
+                params.attemptTracker.recordHttpStatus(response?.code)
 
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
@@ -782,4 +785,3 @@ internal fun resolveResponseProviderCapabilities(host: String): ResponseProvider
         else -> ResponseProviderCapabilities()
     }
 }
-

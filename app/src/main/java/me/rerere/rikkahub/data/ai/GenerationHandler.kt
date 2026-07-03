@@ -20,6 +20,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
+import me.rerere.ai.provider.GenerationAttemptTracker
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
@@ -47,19 +48,121 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.applyPlaceholders
+import java.io.IOException
 import java.util.Locale
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
+private val HTTP_STATUS_PATTERN = Regex("""(?:^|\D)(\d{3})(?:\D|$)""")
 
 @Serializable
 sealed interface GenerationChunk {
     data class Messages(
         val messages: List<UIMessage>
     ) : GenerationChunk
+}
+
+internal fun normalizedGenerationRetryLimit(limit: Int): Int =
+    limit.coerceIn(0, 10)
+
+internal fun extractHttpStatusFromGenerationError(error: Throwable): Int? {
+    val text = generateSequence(error) { it.cause }
+        .joinToString(" ") { throwable ->
+            listOfNotNull(throwable.message, throwable.localizedMessage)
+                .joinToString(" ")
+        }
+    return HTTP_STATUS_PATTERN.findAll(text)
+        .mapNotNull { it.groupValues.getOrNull(1)?.toIntOrNull() }
+        .firstOrNull { it in 100..599 }
+}
+
+internal fun isRetryableGenerationError(
+    error: Throwable,
+    tracker: GenerationAttemptTracker = GenerationAttemptTracker(),
+): Boolean {
+    if (error is CancellationException) return false
+
+    val status = tracker.httpStatus ?: extractHttpStatusFromGenerationError(error)
+    if (status != null) {
+        return status == 408 ||
+            status == 409 ||
+            status == 425 ||
+            status == 429 ||
+            status in 500..599
+    }
+
+    if (error is SocketTimeoutException ||
+        error is ConnectException ||
+        error is SocketException ||
+        error is UnknownHostException ||
+        error is IOException
+    ) {
+        return true
+    }
+
+    val text = generateSequence(error) { it.cause }
+        .joinToString(" ") { throwable ->
+            listOfNotNull(throwable::class.qualifiedName, throwable.message)
+                .joinToString(" ")
+        }
+        .lowercase()
+
+    val nonRetryableConfigurationHints = listOf(
+        "invalid api key",
+        "invalid_api_key",
+        "incorrect api key",
+        "unauthorized",
+        "forbidden",
+        "permission denied",
+        "model not found",
+        "does not exist",
+        "unsupported",
+        "invalid request",
+        "bad request",
+    )
+    if (nonRetryableConfigurationHints.any { it in text }) {
+        return false
+    }
+
+    val retryableHints = listOf(
+        "timeout",
+        "timed out",
+        "connection reset",
+        "connection shutdown",
+        "broken pipe",
+        "stream was reset",
+        "temporarily unavailable",
+        "try again",
+        "overloaded",
+        "overload",
+        "busy",
+        "rate limit",
+        "rate_limit",
+        "too many requests",
+        "quota",
+        "capacity",
+    )
+    return retryableHints.any { it in text }
+}
+
+internal fun hasGeneratedAssistantContent(messages: List<UIMessage>): Boolean {
+    val message = messages.lastOrNull { it.role == MessageRole.ASSISTANT } ?: return false
+    return message.parts.any { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text.isNotBlank()
+            is UIMessagePart.Reasoning -> part.reasoning.isNotBlank()
+            is UIMessagePart.Tool -> part.toolName.isNotBlank() || part.input.isNotBlank()
+            is UIMessagePart.Image -> part.url.isNotBlank()
+            else -> false
+        }
+    }
 }
 
 class GenerationHandler(
@@ -399,59 +502,90 @@ class GenerationHandler(
         )
 
         var messages: List<UIMessage> = messages
-        val params = TextGenerationParams(
-            model = model,
-            temperature = assistant.temperature,
-            topP = assistant.topP,
-            maxTokens = assistant.maxTokens,
-            tools = tools,
-            reasoningLevel = assistant.reasoningLevel,
-            customHeaders = buildList {
-                addAll(assistant.customHeaders)
-                addAll(model.customHeaders)
-            },
-            customBody = buildList {
-                addAll(assistant.customBodies)
-                addAll(model.customBodies)
-            }
-        )
-        if (stream) {
-            providerImpl.streamText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params
-            ).collect {
-                messages = messages.handleMessageChunk(chunk = it, model = model)
-                it.usage?.let { usage ->
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
+        val baseMessages = messages
+        val retryLimit = normalizedGenerationRetryLimit(settings.displaySetting.generationRetryLimit)
+        val tracker = GenerationAttemptTracker()
+        var attempt = 0
+        while (true) {
+            tracker.beginAttempt(attempt)
+            messages = baseMessages
+            var producedContent = false
+            val params = TextGenerationParams(
+                model = model,
+                temperature = assistant.temperature,
+                topP = assistant.topP,
+                maxTokens = assistant.maxTokens,
+                tools = tools,
+                reasoningLevel = assistant.reasoningLevel,
+                customHeaders = buildList {
+                    addAll(assistant.customHeaders)
+                    addAll(model.customHeaders)
+                },
+                customBody = buildList {
+                    addAll(assistant.customBodies)
+                    addAll(model.customBodies)
+                },
+                attemptTracker = tracker,
+            )
+            try {
+                if (stream) {
+                    providerImpl.streamText(
+                        providerSetting = provider,
+                        messages = internalMessages,
+                        params = params
+                    ).collect {
+                        tracker.recordStreamStarted()
+                        messages = messages.handleMessageChunk(chunk = it, model = model)
+                        producedContent = producedContent || hasGeneratedAssistantContent(messages)
+                        it.usage?.let { usage ->
+                            messages = messages.mapIndexed { index, message ->
+                                if (index == messages.lastIndex) {
+                                    message.copy(usage = message.usage.merge(usage))
+                                } else {
+                                    message
+                                }
+                            }
+                        }
+                        onUpdateMessages(messages)
+                    }
+                } else {
+                    val chunk = providerImpl.generateText(
+                        providerSetting = provider,
+                        messages = internalMessages,
+                        params = params,
+                    )
+                    messages = messages.handleMessageChunk(chunk = chunk, model = model)
+                    producedContent = producedContent || hasGeneratedAssistantContent(messages)
+                    chunk.usage?.let { usage ->
+                        messages = messages.mapIndexed { index, message ->
+                            if (index == messages.lastIndex) {
+                                message.copy(
+                                    usage = message.usage.merge(usage)
+                                )
+                            } else {
+                                message
+                            }
                         }
                     }
+                    onUpdateMessages(messages)
                 }
-                onUpdateMessages(messages)
-            }
-        } else {
-            val chunk = providerImpl.generateText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params,
-            )
-            messages = messages.handleMessageChunk(chunk = chunk, model = model)
-            chunk.usage?.let { usage ->
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex) {
-                        message.copy(
-                            usage = message.usage.merge(usage)
-                        )
-                    } else {
-                        message
-                    }
+                return
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                tracker.recordHttpStatus(tracker.httpStatus ?: extractHttpStatusFromGenerationError(error))
+                val shouldRetry = !producedContent &&
+                    attempt < retryLimit &&
+                    isRetryableGenerationError(error, tracker)
+                if (!shouldRetry) {
+                    throw error
                 }
+                attempt++
+                Log.w(
+                    TAG,
+                    "generateInternal: retry attempt $attempt/$retryLimit after ${error.javaClass.simpleName}: ${error.message}"
+                )
+                processingStatus.value = "Retrying generation ($attempt/$retryLimit)..."
             }
-            onUpdateMessages(messages)
         }
     }
 

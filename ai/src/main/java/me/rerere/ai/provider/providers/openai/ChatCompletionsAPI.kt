@@ -91,6 +91,7 @@ class ChatCompletionsAPI(
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
         val response = client.newCall(request).await()
+        params.attemptTracker.recordHttpStatus(response.code)
         if (!response.isSuccessful) {
             throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
         }
@@ -158,6 +159,7 @@ class ChatCompletionsAPI(
                 type: String?,
                 data: String
             ) {
+                params.attemptTracker.recordStreamStarted()
                 if (data == "[DONE]") {
                     println("[onEvent] (done) 结束流: $data")
                     close()
@@ -211,6 +213,7 @@ class ChatCompletionsAPI(
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
+                params.attemptTracker.recordHttpStatus(response?.code)
 
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
