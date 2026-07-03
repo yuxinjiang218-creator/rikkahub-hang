@@ -104,6 +104,7 @@ object ToolUIRegistry {
         ConversationSearchToolUI,
         EditFileToolUI,
         ReadFileToolUI,
+        ViewImageToolUI,
         WriteFileToolUI,
         ShellToolUI,
     ).associateBy { it.toolName }

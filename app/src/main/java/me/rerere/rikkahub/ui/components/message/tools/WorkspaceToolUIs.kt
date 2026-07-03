@@ -195,6 +195,25 @@ object ReadFileToolUI : ToolUIRenderer {
 }
 
 /**
+ * 工作空间查看图片: 工具输出中的 UIMessagePart.Image 会由通用工具卡片渲染缩略图和详情
+ */
+object ViewImageToolUI : ToolUIRenderer {
+    override val toolName: String = "workspace_view_image"
+
+    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.FileView
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val path = context.arguments.getStringContent("path")
+        return if (path != null) {
+            stringResource(R.string.tool_ui_view_image, path)
+        } else {
+            stringResource(R.string.tool_ui_view_image_default)
+        }
+    }
+}
+
+/**
  * 工作空间写入文件: 内容取自入参 (未执行也可预览), 摘要为内容首部, 详情为完整内容
  */
 object WriteFileToolUI : ToolUIRenderer {

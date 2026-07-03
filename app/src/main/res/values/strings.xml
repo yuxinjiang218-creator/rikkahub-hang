@@ -1186,6 +1186,7 @@
   <string name="workspace_detail_tool_approval_desc">When enabled, user confirmation is required before AI calls this tool</string>
   <string name="workspace_detail_tool_list_files">List Files</string>
   <string name="workspace_detail_tool_read_file">Read File</string>
+  <string name="workspace_detail_tool_view_image">View Image</string>
   <string name="workspace_detail_tool_write_file">Write File</string>
   <string name="workspace_detail_tool_edit_file">Edit File</string>
   <string name="workspace_detail_tool_delete_file">Delete File</string>
@@ -1232,6 +1233,8 @@
   <string name="tool_ui_edit_file_default">Edit file</string>
   <string name="tool_ui_read_file">Read: %s</string>
   <string name="tool_ui_read_file_default">Read file</string>
+  <string name="tool_ui_view_image">View image: %s</string>
+  <string name="tool_ui_view_image_default">View image</string>
   <string name="tool_ui_write_file">Write: %s</string>
   <string name="tool_ui_write_file_default">Write file</string>
   <string name="tool_ui_list_files">List: %s</string>
