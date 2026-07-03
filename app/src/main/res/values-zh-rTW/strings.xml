@@ -1271,5 +1271,6 @@
   <string name="chat_page_folder_add">新增</string>
   <string name="chat_page_delete_folder_confirm">刪除資料夾「%1$s」？資料夾內的對話不會被刪除，只會從資料夾中移除。</string>
   <string name="chat_page_delete_folder_generating">此資料夾中的部分對話仍在生成中。請先停止它們再刪除。</string>
+  <string name="safe_mode_enter_app">進入應用程式</string>
+  <string name="setting_display_page_generation_retry_limit_title">生成重試次數</string>
 </resources>
-

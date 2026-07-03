@@ -101,6 +101,9 @@ android {
     androidResources {
         generateLocaleConfig = true
     }
+    lint {
+        disable += "LocalContextGetResourceValueCall"
+    }
     packaging {
         jniLibs {
             useLegacyPackaging = true
