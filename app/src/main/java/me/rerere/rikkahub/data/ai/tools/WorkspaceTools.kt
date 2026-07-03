@@ -72,7 +72,7 @@ private fun createReadFileTool(
     description = """
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area, and /upload for read-only files uploaded by the user.
-        Supports UTF-8 text files. Use workspace_view_image for image files.
+        Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp, svg). Image files are returned as a visible image result plus JSON metadata.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
@@ -85,18 +85,19 @@ private fun createReadFileTool(
     needsApproval = { needsApproval("workspace_read_file") },
     execute = {
         val path = it.jsonObject.absolutePath("path")
-        require(!path.isImagePath()) {
-            "Image files must be viewed with workspace_view_image, not workspace_read_file: $path"
-        }
-        val text = workspaceRepository.readTextInRootfs(workspaceId, path)
-        listOf(
-            UIMessagePart.Text(
-                buildJsonObject {
-                    put("path", path)
-                    put("text", text)
-                }.toString()
+        if (path.isImagePath()) {
+            workspaceRepository.readImageInRootfs(workspaceId, path)
+        } else {
+            val text = workspaceRepository.readTextInRootfs(workspaceId, path)
+            listOf(
+                UIMessagePart.Text(
+                    buildJsonObject {
+                        put("path", path)
+                        put("text", text)
+                    }.toString()
+                )
             )
-        )
+        }
     },
 )
 
