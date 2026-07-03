@@ -2,6 +2,7 @@ package me.rerere.tts.provider
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -191,6 +192,7 @@ sealed class TTSProviderSetting {
         override var name: String = "ElevenLabs TTS",
         val apiKey: String = "",
         val baseUrl: String = "https://api.elevenlabs.io",
+        @EncodeDefault
         val model: String = "eleven_multilingual_v2",
         val voiceId: String = "JBFqnCBsd6RMkjVDRZzb",
         val stability: Float = 0.5f,
