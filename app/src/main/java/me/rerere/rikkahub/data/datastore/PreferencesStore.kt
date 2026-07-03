@@ -83,6 +83,7 @@ class SettingsStore(
 
         // 模型选择
         val ENABLE_WEB_SEARCH = booleanPreferencesKey("enable_web_search")
+        val PRESERVE_WEB_SEARCH_CONTEXT = booleanPreferencesKey("preserve_web_search_context")
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val FAST_MODEL = stringPreferencesKey("fast_model")
@@ -164,6 +165,7 @@ class SettingsStore(
         }.map { preferences ->
             Settings(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
+                preserveWebSearchContext = preferences[PRESERVE_WEB_SEARCH_CONTEXT] == true,
                 favoriteModels = preferences[FAVORITE_MODELS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -358,6 +360,7 @@ class SettingsStore(
             preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settings.displaySetting)
 
             preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
+            preferences[PRESERVE_WEB_SEARCH_CONTEXT] = settings.preserveWebSearchContext
             preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settings.favoriteModels)
             preferences[SELECT_MODEL] = settings.chatModelId.toString()
             preferences[FAST_MODEL] = settings.fastModelId.toString()
@@ -500,6 +503,7 @@ data class Settings(
     val developerMode: Boolean = false,
     val displaySetting: DisplaySetting = DisplaySetting(),
     val enableWebSearch: Boolean = false,
+    val preserveWebSearchContext: Boolean = false,
     val favoriteModels: List<Uuid> = emptyList(),
     val chatModelId: Uuid = Uuid.random(),
     val fastModelId: Uuid = Uuid.random(),
