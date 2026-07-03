@@ -13,9 +13,6 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +20,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -37,14 +35,19 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.canResumeToolExecution
+import me.rerere.ai.ui.findKeepStartIndexForVisibleMessages
 import me.rerere.ai.ui.finishPendingTools
 import me.rerere.ai.ui.finishReasoning
+import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
@@ -80,8 +83,11 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.CompressionEvent
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
+import me.rerere.rikkahub.data.model.compressionEventOrder
+import me.rerere.rikkahub.data.model.latestCompressionEvent
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -97,6 +103,7 @@ import me.rerere.workspace.WorkspaceShellStatus
 import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
@@ -120,6 +127,11 @@ data class ChatError(
     val solution: ChatErrorSolution? = null,
 )
 
+data class CompressionUiState(
+    val conversationId: Uuid,
+    val progressMessage: String,
+)
+
 enum class ChatErrorSolution {
     CheckTitleModelSettings,
 }
@@ -140,6 +152,51 @@ private val outputTransformers by lazy {
         Base64ImageToLocalFileTransformer,
         RegexOutputTransformer,
     )
+}
+
+internal suspend fun collectCompressionSummaryFromStream(
+    prompt: String,
+    model: Model,
+    chunks: Flow<MessageChunk>,
+    onChunk: suspend () -> Unit = {},
+): String {
+    var messages = listOf(UIMessage.user(prompt))
+    chunks.collect { chunk ->
+        messages = messages.handleMessageChunk(chunk = chunk, model = model)
+        onChunk()
+    }
+    return messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+        ?.toText()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: throw IllegalStateException("Failed to generate compressed summary")
+}
+
+internal fun MessageChunk.toCompressionSummary(): String? =
+    choices.firstOrNull()
+        ?.message
+        ?.toText()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+
+internal fun Throwable.isStreamUnsupportedForCompression(): Boolean {
+    if (this is NotImplementedError || this is UnsupportedOperationException) return true
+    val text = listOfNotNull(message, cause?.message)
+        .joinToString(" ")
+        .lowercase()
+    return "not supported" in text ||
+        "unsupported" in text ||
+        "not implemented" in text ||
+        "unimplemented" in text
+}
+
+internal fun shouldFallbackToNonStreamingCompression(
+    provider: ProviderSetting,
+    error: Throwable,
+): Boolean {
+    if (error is CancellationException) return false
+    if (provider is ProviderSetting.OpenAI && provider.useResponseApi) return false
+    return error.isStreamUnsupportedForCompression()
 }
 
 class ChatService(
@@ -192,6 +249,27 @@ class ChatService(
     // 生成完成流
     private val _generationDoneFlow = MutableSharedFlow<Uuid>()
     val generationDoneFlow: SharedFlow<Uuid> = _generationDoneFlow.asSharedFlow()
+    private val _compressionScrollEvents = MutableSharedFlow<Pair<Uuid, Long>>(extraBufferCapacity = 8)
+    val compressionScrollEvents: SharedFlow<Pair<Uuid, Long>> = _compressionScrollEvents.asSharedFlow()
+    private val _compressionUiState = MutableStateFlow<CompressionUiState?>(null)
+    val compressionUiState: StateFlow<CompressionUiState?> = _compressionUiState.asStateFlow()
+    private val compressionJobs = ConcurrentHashMap<Uuid, Job>()
+    private val compressionRunIdGenerator = AtomicLong(0L)
+    private val activeCompressionRunIds = ConcurrentHashMap<Uuid, Long>()
+    private val canceledCompressionRunIds = ConcurrentHashMap<Uuid, Long>()
+
+    fun cancelCompression(conversationId: Uuid) {
+        val runId = activeCompressionRunIds[conversationId]
+        if (runId != null) {
+            canceledCompressionRunIds[conversationId] = runId
+        }
+        if (_compressionUiState.value?.conversationId == conversationId) {
+            _compressionUiState.value = null
+        }
+        compressionJobs.remove(conversationId)?.cancel(
+            CancellationException("Compression canceled by user")
+        )
+    }
 
     // 前台状态管理
     private val _isForeground = MutableStateFlow(false)
@@ -526,7 +604,46 @@ class ChatService(
             // check invalid messages
             checkInvalidMessages(conversationId)
             val conversation = getConversationFlow(conversationId).value
+            val compressedUntil = conversation.compressionState.lastCompressedMessageIndex
+                .coerceAtMost(conversation.currentMessages.lastIndex)
+            val useCompressedSummary = conversation.compressionState.hasSummary &&
+                (messageRange == null || messageRange.endInclusive >= compressedUntil) &&
+                compressedUntil >= 0
+            val compressedTailStart = (compressedUntil + 1).coerceAtLeast(0)
+            val compressedTailEndExclusive = if (messageRange != null) {
+                (messageRange.endInclusive + 1).coerceAtMost(conversation.currentMessages.size)
+            } else {
+                conversation.currentMessages.size
+            }
+            val compressedGenerationStartIndex = if (useCompressedSummary) {
+                if (compressedTailStart < compressedTailEndExclusive) {
+                    compressedTailStart
+                } else {
+                    (compressedTailEndExclusive - 1).coerceIn(0, conversation.currentMessages.lastIndex)
+                }
+            } else {
+                0
+            }
+            val messagesForGeneration = when {
+                useCompressedSummary -> {
+                    listOf(buildCompressedConversationContextMessage(conversation.compressionState.dialogueSummaryText)) +
+                        conversation.currentMessages.subList(
+                            compressedGenerationStartIndex,
+                            compressedTailEndExclusive.coerceAtLeast(compressedGenerationStartIndex + 1)
+                        )
+                }
 
+                messageRange != null -> {
+                    conversation.currentMessages.subList(messageRange.start, messageRange.endInclusive + 1)
+                }
+
+                else -> conversation.currentMessages
+            }
+            val generationWriteBackStartIndex = when {
+                useCompressedSummary -> compressedGenerationStartIndex
+                messageRange != null -> messageRange.start
+                else -> 0
+            }
             // start generating
             val session = getOrCreateSession(conversationId)
             generationHandler.generateText(
@@ -534,13 +651,7 @@ class ChatService(
                 model = model,
                 processingStatus = session.processingStatus,
                 messages = prepareMessagesForModelContext(
-                    messages = conversation.currentMessages.let {
-                    if (messageRange != null) {
-                        it.subList(messageRange.start, messageRange.endInclusive + 1)
-                    } else {
-                        it
-                    }
-                    },
+                    messages = messagesForGeneration,
                     preserveWebSearchContext = settings.preserveWebSearchContext,
                 ),
                 assistant = assistant,
@@ -628,13 +739,18 @@ class ChatService(
             }.collect { chunk ->
                 when (chunk) {
                     is GenerationChunk.Messages -> {
+                        val messagesToWriteBack = if (useCompressedSummary) {
+                            chunk.messages.drop(1)
+                        } else {
+                            chunk.messages
+                        }
                         val updatedConversation = getConversationFlow(conversationId).value
-                            .updateCurrentMessages(chunk.messages)
+                            .updateCurrentMessages(messagesToWriteBack, startIndex = generationWriteBackStartIndex)
                         updateConversation(conversationId, updatedConversation)
 
                         // 如果应用不在前台，发送 Live Update 通知
                         if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration && settings.displaySetting.enableLiveUpdateNotification) {
-                            sendLiveUpdateNotification(conversationId, chunk.messages, senderName)
+                            sendLiveUpdateNotification(conversationId, messagesToWriteBack, senderName)
                         }
                     }
                 }
@@ -855,88 +971,294 @@ class ChatService(
 
     // ---- 压缩对话历史 ----
 
+    private fun buildCompressedConversationContextMessage(dialogueSummaryText: String): UIMessage {
+        return UIMessage.user(
+            buildString {
+                appendLine("[Compressed conversation summary]")
+                appendLine("The following is a compact summary of earlier conversation turns. Use it only as prior context; the assistant's system instructions remain unchanged.")
+                appendLine()
+                append(dialogueSummaryText.trim())
+            }
+        )
+    }
+
     suspend fun compressConversation(
         conversationId: Uuid,
         conversation: Conversation,
         additionalPrompt: String,
         targetTokens: Int,
         keepRecentMessages: Int = 32
+    ): Result<Unit> = runCompression(conversationId) { runId ->
+        compressConversationInternal(
+            runId = runId,
+            conversationId = conversationId,
+            conversation = conversation,
+            additionalPrompt = additionalPrompt,
+            targetTokens = targetTokens,
+            keepRecentMessages = keepRecentMessages,
+        )
+    }
+
+    suspend fun regenerateLatestCompression(conversationId: Uuid): Result<Unit> = runCompression(conversationId) { runId ->
+        val conversation = getConversationFlow(conversationId).value
+        val latestEvent = conversation.compressionEvents.latestCompressionEvent()
+            ?: throw IllegalStateException("No latest compression summary found")
+        val rebuiltConversation = conversation.copy(
+            compressionState = conversation.compressionState.copy(
+                dialogueSummaryText = latestEvent.baseDialogueSummaryText,
+                lastCompressedMessageIndex = (latestEvent.compressStartIndex - 1).coerceAtLeast(-1),
+                dialogueSummaryUpdatedAt = Instant.now(),
+                updatedAt = Instant.now(),
+            )
+        )
+        compressConversationInternal(
+            runId = runId,
+            conversationId = conversationId,
+            conversation = rebuiltConversation,
+            additionalPrompt = latestEvent.additionalPrompt,
+            targetTokens = latestEvent.targetTokens.takeIf { it > 0 } ?: 1024,
+            keepRecentMessages = latestEvent.keepRecentMessages,
+            baseSummaryOverride = latestEvent.baseDialogueSummaryText,
+            startIndexOverride = latestEvent.compressStartIndex,
+            endIndexOverride = latestEvent.compressEndIndex,
+            replaceEventId = latestEvent.id,
+        )
+    }
+
+    suspend fun editLatestDialogueSummary(
+        conversationId: Uuid,
+        editedSummaryText: String,
     ): Result<Unit> = runCatching {
+        val normalizedSummary = editedSummaryText.trim()
+        if (normalizedSummary.isBlank()) {
+            throw IllegalStateException("Dialogue summary cannot be blank")
+        }
+
+        val conversation = getConversationFlow(conversationId).value
+        val latestEvent = conversation.compressionEvents.latestCompressionEvent()
+            ?: throw IllegalStateException("No latest compression summary found")
+        val now = Instant.now()
+        val updatedEvent = latestEvent.copy(
+            dialogueSummaryText = normalizedSummary,
+            dialogueSummaryPreview = buildDialogueSummaryPreview(normalizedSummary),
+        )
+        val updatedConversation = conversation.copy(
+            compressionState = conversation.compressionState.copy(
+                dialogueSummaryText = normalizedSummary,
+                dialogueSummaryUpdatedAt = now,
+                updatedAt = now,
+            ),
+            compressionEvents = conversation.compressionEvents
+                .map { event -> if (event.id == updatedEvent.id) updatedEvent else event }
+                .sortedWith(compressionEventOrder),
+            chatSuggestions = emptyList(),
+            updateAt = now,
+        )
+        saveConversation(conversationId, updatedConversation)
+    }
+
+    private suspend fun runCompression(
+        conversationId: Uuid,
+        block: suspend (runId: Long) -> Unit,
+    ): Result<Unit> = runCatching {
+        val currentJob = kotlin.coroutines.coroutineContext[Job]
+        val runId = compressionRunIdGenerator.incrementAndGet()
+        activeCompressionRunIds[conversationId] = runId
+        if (currentJob != null) {
+            compressionJobs[conversationId] = currentJob
+        }
+        _compressionUiState.value = CompressionUiState(
+            conversationId = conversationId,
+            progressMessage = context.getString(R.string.chat_page_compressing),
+        )
+        try {
+            throwIfCompressionCanceled(conversationId, runId)
+            block(runId)
+        } finally {
+            if (compressionJobs[conversationId] === currentJob) {
+                compressionJobs.remove(conversationId)
+            }
+            if (activeCompressionRunIds[conversationId] == runId) {
+                activeCompressionRunIds.remove(conversationId)
+            }
+            if (canceledCompressionRunIds[conversationId] == runId) {
+                canceledCompressionRunIds.remove(conversationId)
+            }
+            if (
+                _compressionUiState.value?.conversationId == conversationId &&
+                activeCompressionRunIds[conversationId] == null
+            ) {
+                _compressionUiState.value = null
+            }
+        }
+    }
+
+    private fun throwIfCompressionCanceled(conversationId: Uuid, runId: Long) {
+        if (canceledCompressionRunIds[conversationId] == runId) {
+            throw CancellationException("Compression canceled by user")
+        }
+    }
+
+    private suspend fun compressConversationInternal(
+        runId: Long,
+        conversationId: Uuid,
+        conversation: Conversation,
+        additionalPrompt: String,
+        targetTokens: Int,
+        keepRecentMessages: Int,
+        baseSummaryOverride: String? = null,
+        startIndexOverride: Int? = null,
+        endIndexOverride: Int? = null,
+        replaceEventId: Long? = null,
+    ) {
         val settings = settingsStore.settingsFlow.first()
         val model = settings.findModelById(settings.compressModelId)
             ?: settings.getCurrentChatModel()
             ?: throw IllegalStateException("No model available for compression")
         val provider = model.findProvider(settings.providers)
             ?: throw IllegalStateException("Provider not found")
-
         val providerHandler = providerManager.getProviderByType(provider)
 
-        val maxMessagesPerChunk = 256
         val allMessages = conversation.currentMessages
-
-        // Split messages into those to compress and those to keep
-        val messagesToCompress: List<UIMessage>
-        val messagesToKeep: List<UIMessage>
-
-        if (keepRecentMessages > 0 && allMessages.size > keepRecentMessages) {
-            messagesToCompress = allMessages.dropLast(keepRecentMessages)
-            messagesToKeep = allMessages.takeLast(keepRecentMessages)
-        } else if (keepRecentMessages > 0) {
-            // Not enough messages to compress while keeping recent ones
+        val normalizedKeepRecent = keepRecentMessages.coerceAtLeast(0)
+        val keepStartIndex = allMessages.findKeepStartIndexForVisibleMessages(normalizedKeepRecent)
+            ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_not_enough_messages))
+        val compressEndIndex = endIndexOverride ?: (keepStartIndex - 1)
+        if (compressEndIndex < 0) {
             throw IllegalStateException(context.getString(R.string.chat_page_compress_not_enough_messages))
-        } else {
-            messagesToCompress = allMessages
-            messagesToKeep = emptyList()
+        }
+        val compressStartIndex = startIndexOverride
+            ?: (conversation.compressionState.lastCompressedMessageIndex + 1).coerceAtLeast(0)
+        if (compressStartIndex > compressEndIndex) {
+            throw IllegalStateException(context.getString(R.string.chat_page_compress_not_enough_messages))
         }
 
-        fun splitMessages(messages: List<UIMessage>): List<List<UIMessage>> {
-            if (messages.size <= maxMessagesPerChunk) return listOf(messages)
-            val mid = messages.size / 2
-            val left = splitMessages(messages.subList(0, mid))
-            val right = splitMessages(messages.subList(mid, messages.size))
-            return left + right
+        val messagesToCompress = allMessages.subList(compressStartIndex, compressEndIndex + 1)
+        val baseSummaryText = baseSummaryOverride ?: conversation.compressionState.dialogueSummaryText
+        val incrementalMessages = messagesToCompress.joinToString("\n\n") { it.summaryAsText() }
+        val legacyContentToCompress = buildString {
+            if (baseSummaryText.isNotBlank()) {
+                appendLine("[Previous compressed summary]")
+                appendLine(baseSummaryText.trim())
+                appendLine()
+            }
+            append(incrementalMessages)
         }
+        val prompt = settings.compressPrompt.applyPlaceholders(
+            "dialogue_summary_text" to baseSummaryText,
+            "incremental_messages" to incrementalMessages,
+            "additional_context" to buildString {
+                if (additionalPrompt.isNotBlank()) {
+                    append("Additional instructions from user: ")
+                    append(additionalPrompt)
+                    appendLine()
+                }
+                append("Keep recent visible messages outside compression: ")
+                append(normalizedKeepRecent)
+            },
+            "locale" to Locale.getDefault().displayName
+        ).applyPlaceholders(
+            "content" to legacyContentToCompress,
+            "target_tokens" to targetTokens.toString(),
+        )
 
-        suspend fun compressMessages(messages: List<UIMessage>): String {
-            val contentToCompress = messages.joinToString("\n\n") { it.summaryAsText(maxLength = 2000) }
-            val prompt = settings.compressPrompt.applyPlaceholders(
-                "content" to contentToCompress,
-                "target_tokens" to targetTokens.toString(),
-                "additional_context" to if (additionalPrompt.isNotBlank()) {
-                    "Additional instructions from user: $additionalPrompt"
-                } else "",
-                "locale" to Locale.getDefault().displayName
+        throwIfCompressionCanceled(conversationId, runId)
+        val nextDialogueSummary = generateCompressionSummary(
+            runId = runId,
+            conversationId = conversationId,
+            providerHandler = providerHandler,
+            provider = provider,
+            model = model,
+            prompt = prompt,
+        )
+
+        val now = Instant.now()
+        val eventId = replaceEventId ?: generateCompressionEventId(conversation.compressionEvents)
+        val event = CompressionEvent(
+            id = eventId,
+            boundaryIndex = (compressEndIndex + 1).coerceIn(0, conversation.messageNodes.size),
+            dialogueSummaryText = nextDialogueSummary,
+            dialogueSummaryPreview = buildDialogueSummaryPreview(nextDialogueSummary),
+            targetTokens = targetTokens,
+            compressStartIndex = compressStartIndex,
+            compressEndIndex = compressEndIndex,
+            keepRecentMessages = normalizedKeepRecent,
+            trigger = if (replaceEventId != null) "regenerate" else "manual",
+            additionalPrompt = additionalPrompt,
+            baseDialogueSummaryText = baseSummaryText,
+            createdAt = now,
+        )
+        val updatedEvents = conversation.compressionEvents
+            .filterNot { existing -> existing.id == eventId }
+            .plus(event)
+            .sortedWith(compressionEventOrder)
+        val updatedConversation = conversation.copy(
+            compressionState = conversation.compressionState.copy(
+                dialogueSummaryText = nextDialogueSummary,
+                dialogueSummaryUpdatedAt = now,
+                lastCompressedMessageIndex = compressEndIndex,
+                updatedAt = now,
+            ),
+            compressionEvents = updatedEvents,
+            chatSuggestions = emptyList(),
+            updateAt = now,
+        )
+        throwIfCompressionCanceled(conversationId, runId)
+        saveConversation(conversationId, updatedConversation)
+        _compressionScrollEvents.tryEmit(conversationId to event.id)
+    }
+
+    private suspend fun <T : ProviderSetting> generateCompressionSummary(
+        runId: Long,
+        conversationId: Uuid,
+        providerHandler: Provider<T>,
+        provider: T,
+        model: Model,
+        prompt: String,
+    ): String {
+        val params = backgroundTextGenerationParams(model)
+        return runCatching {
+            collectCompressionSummaryFromStream(
+                prompt = prompt,
+                model = model,
+                chunks = providerHandler.streamText(
+                    providerSetting = provider,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = params,
+                ),
+                onChunk = {
+                    throwIfCompressionCanceled(conversationId, runId)
+                },
             )
-
+        }.recoverCatching { error ->
+            if (!shouldFallbackToNonStreamingCompression(provider, error)) {
+                throw error
+            }
+            throwIfCompressionCanceled(conversationId, runId)
             val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(prompt)),
-                params = backgroundTextGenerationParams(model),
+                params = params,
             )
-
-            return result.choices[0].message?.toText()?.trim()
+            throwIfCompressionCanceled(conversationId, runId)
+            result.toCompressionSummary()
                 ?: throw IllegalStateException("Failed to generate compressed summary")
-        }
+        }.getOrThrow()
+    }
 
-        val compressedSummaries = coroutineScope {
-            splitMessages(messagesToCompress)
-                .map { chunk -> async { compressMessages(chunk) } }
-                .awaitAll()
+    private fun generateCompressionEventId(events: List<CompressionEvent>): Long {
+        val candidate = System.currentTimeMillis()
+        return if (events.none { it.id == candidate }) {
+            candidate
+        } else {
+            (events.maxOfOrNull(CompressionEvent::id) ?: candidate) + 1L
         }
+    }
 
-        // Create new conversation with compressed history as multiple user messages + kept messages
-        val newMessageNodes = buildList {
-            compressedSummaries.forEach { summary ->
-                add(UIMessage.user(summary).toMessageNode())
-            }
-            addAll(messagesToKeep.map { it.toMessageNode() })
-        }
-        val newConversation = conversation.copy(
-            messageNodes = newMessageNodes,
-            chatSuggestions = emptyList(),
-        )
-
-        saveConversation(conversationId, newConversation)
+    private fun buildDialogueSummaryPreview(summary: String): String {
+        return summary.trim()
+            .replace("\n", " ")
+            .take(220)
     }
 
     // ---- 通知 ----

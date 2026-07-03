@@ -22,6 +22,13 @@ data class ConversationEntity(
     val chatSuggestions: String,
     @ColumnInfo("is_pinned", defaultValue = "0")
     val isPinned: Boolean,
+    @ColumnInfo(
+        "compression_state",
+        defaultValue = "{\"dialogueSummaryText\":\"\",\"dialogueSummaryUpdatedAt\":\"1970-01-01T00:00:00Z\",\"lastCompressedMessageIndex\":-1,\"updatedAt\":\"1970-01-01T00:00:00Z\"}"
+    )
+    val compressionState: String = "",
+    @ColumnInfo("compression_events", defaultValue = "[]")
+    val compressionEvents: String = "[]",
     @ColumnInfo("custom_system_prompt", defaultValue = "")
     val customSystemPrompt: String = "",
     @ColumnInfo("mode_injection_ids", defaultValue = "[]")

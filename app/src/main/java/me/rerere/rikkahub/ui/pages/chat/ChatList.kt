@@ -22,6 +22,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
@@ -52,6 +54,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,6 +94,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getAssistantById
+import me.rerere.rikkahub.data.model.CompressionEvent
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.service.ChatError
@@ -102,12 +106,145 @@ import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.ui.theme.ChatFontProvider
 import me.rerere.rikkahub.utils.plus
+import me.rerere.rikkahub.utils.toLocalDateTime
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
+
+@Composable
+private fun CompressionBoundaryCard(
+    event: CompressionEvent,
+    latest: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onRegenerate: (() -> Unit)? = null,
+    onEditLatestSummary: (() -> Unit)? = null,
+) {
+    val previewText = remember(event.dialogueSummaryPreview, event.dialogueSummaryText) {
+        event.dialogueSummaryPreview.ifBlank {
+            event.dialogueSummaryText.trim().replace("\n", " ").take(220)
+        }
+    }
+    if (!latest) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+            Text(
+                text = event.createdAt.toLocalDateTime(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+        }
+        return
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onToggleExpanded,
+                onLongClick = { onEditLatestSummary?.invoke() }
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+        tonalElevation = 2.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 4.dp, height = 42.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "上下文压缩摘要",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = event.createdAt.toLocalDateTime(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                ) {
+                    Text(
+                        text = "最新",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                if (onRegenerate != null) {
+                    TextButton(onClick = onRegenerate) {
+                        Text(text = "重新生成", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            if (previewText.isNotBlank()) {
+                Text(
+                    text = if (expanded) event.dialogueSummaryText else previewText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (expanded) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = if (expanded) Int.MAX_VALUE else 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (!expanded && event.dialogueSummaryText.length > previewText.length) {
+                Text(
+                    text = "点击展开完整摘要，长按可直接编辑",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun ChatList(
@@ -122,6 +259,8 @@ fun ChatList(
     errors: List<ChatError> = emptyList(),
     onDismissError: (Uuid) -> Unit = {},
     onClearAllErrors: () -> Unit = {},
+    onRegenerateLatestCompression: () -> Unit = {},
+    onEditLatestDialogueSummary: (String) -> Unit = {},
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
     onForkMessage: (UIMessage) -> Unit = {},
@@ -164,6 +303,8 @@ fun ChatList(
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
+                onRegenerateLatestCompression = onRegenerateLatestCompression,
+                onEditLatestDialogueSummary = onEditLatestDialogueSummary,
                 onRegenerate = onRegenerate,
                 onEdit = onEdit,
                 onForkMessage = onForkMessage,
@@ -194,6 +335,8 @@ private fun ChatListNormal(
     errors: List<ChatError>,
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
+    onRegenerateLatestCompression: () -> Unit,
+    onEditLatestDialogueSummary: (String) -> Unit,
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
     onForkMessage: (UIMessage) -> Unit,
@@ -253,6 +396,86 @@ private fun ChatListNormal(
     // 对话大小警告对话框
     val sizeInfo = rememberConversationSizeInfo(conversation)
     var showSizeWarningDialog by rememberSaveable(conversation.id) { mutableStateOf(true) }
+    val compressionEvents = remember(conversation.compressionEvents) {
+        sortedCompressionEvents(conversation.compressionEvents)
+    }
+    val compressionItemsByBoundary = remember(compressionEvents) {
+        compressionEvents.groupBy(CompressionEvent::boundaryIndex)
+    }
+    val latestCompressionEventId = compressionEvents.lastOrNull()?.id
+    var expandedCompressionEventId by rememberSaveable(conversation.id) {
+        mutableStateOf(latestCompressionEventId)
+    }
+    var showRegenerateLatestSummaryConfirm by rememberSaveable(conversation.id) { mutableStateOf(false) }
+    var showEditLatestSummaryDialog by rememberSaveable(conversation.id) { mutableStateOf(false) }
+    var editingLatestSummaryText by rememberSaveable(conversation.id) { mutableStateOf("") }
+    LaunchedEffect(latestCompressionEventId) {
+        if (latestCompressionEventId != null) {
+            expandedCompressionEventId = latestCompressionEventId
+        }
+    }
+    if (showRegenerateLatestSummaryConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRegenerateLatestSummaryConfirm = false },
+            title = {
+                Text(text = "重新生成对话摘要")
+            },
+            text = {
+                Text(text = "这会用上一次压缩的设置重新生成最新摘要，并替换当前主摘要。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRegenerateLatestSummaryConfirm = false
+                        onRegenerateLatestCompression()
+                    }
+                ) {
+                    Text(text = "重新生成")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRegenerateLatestSummaryConfirm = false }) {
+                    Text(text = stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+    if (showEditLatestSummaryDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditLatestSummaryDialog = false },
+            title = {
+                Text(text = "编辑主摘要")
+            },
+            text = {
+                OutlinedTextField(
+                    value = editingLatestSummaryText,
+                    onValueChange = { editingLatestSummaryText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 8,
+                    maxLines = 18,
+                    placeholder = {
+                        Text(text = "在这里直接修正当前主摘要内容")
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onEditLatestDialogueSummary(editingLatestSummaryText)
+                        showEditLatestSummaryDialog = false
+                    },
+                    enabled = editingLatestSummaryText.isNotBlank()
+                ) {
+                    Text(text = "保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditLatestSummaryDialog = false }) {
+                    Text(text = stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
     if (sizeInfo.showWarning && showSizeWarningDialog) {
         ConversationSizeWarningDialog(
             sizeInfo = sizeInfo,
@@ -312,60 +535,125 @@ private fun ChatListNormal(
                     .hazeSource(state = hazeState)
                     .padding(top = innerPadding.calculateTopPadding()),
             ) {
-            itemsIndexed(
-                items = conversation.messageNodes,
-                key = { index, item -> item.id },
-            ) { index, node ->
-                Column {
-                    ListSelectableItem(
-                        key = node.id,
-                        onSelectChange = {
-                            if (!selectedItems.contains(node.id)) {
-                                selectedItems.add(node.id)
-                            } else {
-                                selectedItems.remove(node.id)
-                            }
-                        },
-                        selectedKeys = selectedItems,
-                        enabled = selecting,
+            conversation.messageNodes.forEachIndexed { index, node ->
+                compressionItemsByBoundary[index].orEmpty().forEach { event ->
+                    item(
+                        key = "compression_${event.id}",
+                        contentType = "compression",
                     ) {
-                        ChatMessage(
-                            node = node,
-                            model = node.currentMessage.modelId?.let(modelById::get),
-                            assistant = assistant,
-                            loading = loading && index == lastMessageIndex,
-                            onRegenerate = {
-                                onRegenerate(node.currentMessage)
+                        CompressionBoundaryCard(
+                            event = event,
+                            latest = event.id == latestCompressionEventId,
+                            expanded = expandedCompressionEventId == event.id,
+                            onToggleExpanded = {
+                                expandedCompressionEventId =
+                                    if (expandedCompressionEventId == event.id) null else event.id
                             },
-                            onEdit = {
-                                onEdit(node.currentMessage)
+                            onRegenerate = if (event.id == latestCompressionEventId) {
+                                {
+                                    showRegenerateLatestSummaryConfirm = true
+                                }
+                            } else {
+                                null
                             },
-                            onFork = {
-                                onForkMessage(node.currentMessage)
+                            onEditLatestSummary = if (event.id == latestCompressionEventId) {
+                                {
+                                    editingLatestSummaryText = event.dialogueSummaryText
+                                    showEditLatestSummaryDialog = true
+                                }
+                            } else {
+                                null
                             },
-                            onDelete = {
-                                onDelete(node.currentMessage)
-                            },
-                            onShare = {
-                                selecting = true  // 使用 CoroutineScope 延迟状态更新
-                                selectedItems.clear()
-                                selectedItems.addAll(conversation.messageNodes.map { it.id }
-                                    .subList(0, conversation.messageNodes.indexOf(node) + 1))
-                            },
-                            onUpdate = {
-                                onUpdateMessage(it)
-                            },
-                            isFavorite = node.isFavorite,
-                            onToggleFavorite = {
-                                onToggleFavorite?.invoke(node)
-                            },
-                            onTranslate = onTranslate,
-                            onClearTranslation = onClearTranslation,
-                            onToolApproval = onToolApproval,
-                            onToolAnswer = onToolAnswer,
-                            lastMessage = index == lastMessageIndex,
                         )
                     }
+                }
+                item(
+                    key = node.id,
+                    contentType = "message",
+                ) {
+                    Column {
+                        ListSelectableItem(
+                            key = node.id,
+                            onSelectChange = {
+                                if (!selectedItems.contains(node.id)) {
+                                    selectedItems.add(node.id)
+                                } else {
+                                    selectedItems.remove(node.id)
+                                }
+                            },
+                            selectedKeys = selectedItems,
+                            enabled = selecting,
+                        ) {
+                            ChatMessage(
+                                node = node,
+                                model = node.currentMessage.modelId?.let(modelById::get),
+                                assistant = assistant,
+                                loading = loading && index == lastMessageIndex,
+                                onRegenerate = {
+                                    onRegenerate(node.currentMessage)
+                                },
+                                onEdit = {
+                                    onEdit(node.currentMessage)
+                                },
+                                onFork = {
+                                    onForkMessage(node.currentMessage)
+                                },
+                                onDelete = {
+                                    onDelete(node.currentMessage)
+                                },
+                                onShare = {
+                                    selecting = true
+                                    selectedItems.clear()
+                                    selectedItems.addAll(conversation.messageNodes.map { it.id }
+                                        .subList(0, conversation.messageNodes.indexOf(node) + 1))
+                                },
+                                onUpdate = {
+                                    onUpdateMessage(it)
+                                },
+                                isFavorite = node.isFavorite,
+                                onToggleFavorite = {
+                                    onToggleFavorite?.invoke(node)
+                                },
+                                onTranslate = onTranslate,
+                                onClearTranslation = onClearTranslation,
+                                onToolApproval = onToolApproval,
+                                onToolAnswer = onToolAnswer,
+                                lastMessage = index == lastMessageIndex,
+                            )
+                        }
+                    }
+                }
+            }
+
+            compressionItemsByBoundary[conversation.messageNodes.size].orEmpty().forEach { event ->
+                item(
+                    key = "compression_${event.id}",
+                    contentType = "compression",
+                ) {
+                    CompressionBoundaryCard(
+                        event = event,
+                        latest = event.id == latestCompressionEventId,
+                        expanded = expandedCompressionEventId == event.id,
+                        onToggleExpanded = {
+                            expandedCompressionEventId =
+                                if (expandedCompressionEventId == event.id) null else event.id
+                        },
+                        onRegenerate = if (event.id == latestCompressionEventId) {
+                            {
+                                showRegenerateLatestSummaryConfirm = true
+                            }
+                        } else {
+                            null
+                        },
+                        onEditLatestSummary = if (event.id == latestCompressionEventId) {
+                            {
+                                editingLatestSummaryText = event.dialogueSummaryText
+                                showEditLatestSummaryDialog = true
+                            }
+                        } else {
+                            null
+                        },
+                    )
                 }
             }
 

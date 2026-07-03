@@ -173,3 +173,33 @@ fun CompressContextDialog(
         }
     )
 }
+
+@Composable
+fun CompressionProgressDialog(
+    progressMessage: String,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = {
+            Text(stringResource(R.string.chat_page_compress_context_title))
+        },
+        text = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RabbitLoadingIndicator(modifier = Modifier.size(32.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(progressMessage.ifBlank { stringResource(R.string.chat_page_compressing) })
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        dismissButton = {}
+    )
+}

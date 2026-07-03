@@ -74,6 +74,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.components.ai.CompressionProgressDialog
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.useCropLauncher
@@ -113,6 +114,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
+    val compressionUiState by vm.compressionUiState.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
@@ -144,6 +146,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     }
 
     val inputState = vm.inputState
+    var pendingCompressionScrollEventId by rememberSaveable(id) { mutableStateOf<Long?>(null) }
 
     // 初始化输入状态（处理传入的 files 和 text 参数）
     LaunchedEffect(files, text) {
@@ -179,12 +182,38 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
             if (nodeId != null) {
                 val index = conversation.messageNodes.indexOfFirst { it.id == nodeId }
                 if (index >= 0) {
-                    chatListState.scrollToItem(index)
+                    chatListState.scrollToItem(
+                        renderedListIndexForMessage(
+                            globalMessageIndex = index,
+                            compressionEvents = sortedCompressionEvents(conversation.compressionEvents)
+                        )
+                    )
                 }
             } else {
                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
             }
             vm.chatListInitialized = true
+        }
+    }
+
+    LaunchedEffect(vm, id) {
+        vm.compressionScrollEvents.collect { (conversationId, eventId) ->
+            if (conversationId == id) {
+                pendingCompressionScrollEventId = eventId
+            }
+        }
+    }
+
+    LaunchedEffect(pendingCompressionScrollEventId, conversation.compressionEvents, conversation.messageNodes.size) {
+        val eventId = pendingCompressionScrollEventId ?: return@LaunchedEffect
+        val targetIndex = findCompressionListIndex(
+            eventId = eventId,
+            compressionEvents = sortedCompressionEvents(conversation.compressionEvents),
+            messageCount = conversation.messageNodes.size,
+        ) ?: return@LaunchedEffect
+        if (chatListState.layoutInfo.totalItemsCount > targetIndex) {
+            chatListState.animateScrollToItem(targetIndex)
+            pendingCompressionScrollEventId = null
         }
     }
 
@@ -206,6 +235,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     processingStatus = processingStatus,
                     setting = setting,
                     conversation = conversation,
+                    compressionUiState = compressionUiState,
                     drawerState = drawerState,
                     navController = navController,
                     vm = vm,
@@ -238,6 +268,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     processingStatus = processingStatus,
                     setting = setting,
                     conversation = conversation,
+                    compressionUiState = compressionUiState,
                     drawerState = drawerState,
                     navController = navController,
                     vm = vm,
@@ -265,6 +296,7 @@ private fun ChatPageContent(
     setting: Settings,
     bigScreen: Boolean,
     conversation: Conversation,
+    compressionUiState: me.rerere.rikkahub.service.CompressionUiState?,
     drawerState: DrawerState,
     navController: Navigator,
     vm: ChatVM,
@@ -409,6 +441,12 @@ private fun ChatPageContent(
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
+                onRegenerateLatestCompression = {
+                    vm.regenerateLatestCompression()
+                },
+                onEditLatestDialogueSummary = { summary ->
+                    vm.editLatestDialogueSummary(summary)
+                },
                 onRegenerate = {
                     vm.regenerateAtMessage(it)
                 },
@@ -455,7 +493,12 @@ private fun ChatPageContent(
                 onJumpToMessage = { index ->
                     previewMode = false
                     scope.launch {
-                        chatListState.animateScrollToItem(index)
+                        chatListState.animateScrollToItem(
+                            renderedListIndexForMessage(
+                                globalMessageIndex = index,
+                                compressionEvents = sortedCompressionEvents(conversation.compressionEvents)
+                            )
+                        )
                     }
                 },
                 onToolApproval = { toolCallId, approved, reason ->
@@ -482,6 +525,13 @@ private fun ChatPageContent(
                 assistant = assistant,
                 vm = vm,
                 onDismiss = { showFilesSheet = false },
+            )
+        }
+
+        if (compressionUiState?.conversationId == conversation.id) {
+            CompressionProgressDialog(
+                progressMessage = compressionUiState?.progressMessage.orEmpty(),
+                onCancel = { vm.cancelCompression() }
             )
         }
     }

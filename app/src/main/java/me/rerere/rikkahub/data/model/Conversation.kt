@@ -20,6 +20,8 @@ data class Conversation(
     val messageNodes: List<MessageNode>,
     val chatSuggestions: List<String> = emptyList(),
     val isPinned: Boolean = false,
+    val compressionState: ConversationCompressionState = ConversationCompressionState(),
+    val compressionEvents: List<CompressionEvent> = emptyList(),
     @Serializable(with = InstantSerializer::class)
     val createAt: Instant = Instant.now(),
     @Serializable(with = InstantSerializer::class)
@@ -57,31 +59,39 @@ data class Conversation(
     }
 
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
+        return updateCurrentMessages(messages = messages, startIndex = 0)
+    }
+
+    fun updateCurrentMessage(message: UIMessage, targetIndex: Int): Conversation {
+        require(targetIndex >= 0) { "targetIndex must be >= 0" }
         val newNodes = this.messageNodes.toMutableList()
+        val node = newNodes
+            .getOrElse(targetIndex) { message.toMessageNode() }
+        val newNode = node.withSelectedMessage(message)
 
+        if (targetIndex > newNodes.lastIndex) {
+            newNodes.add(newNode)
+        } else {
+            newNodes[targetIndex] = newNode
+        }
+
+        return this.copy(messageNodes = newNodes)
+    }
+
+    fun updateCurrentMessages(messages: List<UIMessage>, startIndex: Int): Conversation {
+        require(startIndex >= 0) { "startIndex must be >= 0" }
+        val newNodes = this.messageNodes.toMutableList()
         messages.forEachIndexed { index, message ->
+            val targetIndex = startIndex + index
             val node = newNodes
-                .getOrElse(index) { message.toMessageNode() }
-
-            val newMessages = node.messages.toMutableList()
-            var newMessageIndex = node.selectIndex
-            if (newMessages.any { it.id == message.id }) {
-                newMessages[newMessages.indexOfFirst { it.id == message.id }] = message
-            } else {
-                newMessages.add(message)
-                newMessageIndex = newMessages.lastIndex
-            }
-
-            val newNode = node.copy(
-                messages = newMessages,
-                selectIndex = newMessageIndex
-            )
+                .getOrElse(targetIndex) { message.toMessageNode() }
+            val newNode = node.withSelectedMessage(message)
 
             // 更新newNodes
-            if (index > newNodes.lastIndex) {
+            if (targetIndex > newNodes.lastIndex) {
                 newNodes.add(newNode)
             } else {
-                newNodes[index] = newNode
+                newNodes[targetIndex] = newNode
             }
         }
 
@@ -103,6 +113,58 @@ data class Conversation(
             newConversation = newConversation,
         )
     }
+}
+
+@Serializable
+data class ConversationCompressionState(
+    val dialogueSummaryText: String = "",
+    @Serializable(with = InstantSerializer::class)
+    val dialogueSummaryUpdatedAt: Instant = Instant.EPOCH,
+    val lastCompressedMessageIndex: Int = -1,
+    @Serializable(with = InstantSerializer::class)
+    val updatedAt: Instant = Instant.EPOCH
+) {
+    val hasSummary: Boolean
+        get() = dialogueSummaryText.isNotBlank()
+}
+
+@Serializable
+data class CompressionEvent(
+    val id: Long = 0L,
+    val boundaryIndex: Int,
+    val dialogueSummaryText: String = "",
+    val dialogueSummaryPreview: String = "",
+    val targetTokens: Int = 0,
+    val compressStartIndex: Int = 0,
+    val compressEndIndex: Int = -1,
+    val keepRecentMessages: Int = 0,
+    val trigger: String = "",
+    val additionalPrompt: String = "",
+    val baseDialogueSummaryText: String = "",
+    @Serializable(with = InstantSerializer::class)
+    val createdAt: Instant = Instant.now()
+)
+
+val compressionEventOrder: Comparator<CompressionEvent> =
+    compareBy<CompressionEvent>({ it.createdAt }, { it.id })
+
+fun List<CompressionEvent>.latestCompressionEvent(): CompressionEvent? =
+    maxWithOrNull(compressionEventOrder)
+
+private fun MessageNode.withSelectedMessage(message: UIMessage): MessageNode {
+    val newMessages = messages.toMutableList()
+    var newMessageIndex = selectIndex
+    if (newMessages.any { it.id == message.id }) {
+        newMessages[newMessages.indexOfFirst { it.id == message.id }] = message
+    } else {
+        newMessages.add(message)
+        newMessageIndex = newMessages.lastIndex
+    }
+
+    return copy(
+        messages = newMessages,
+        selectIndex = newMessageIndex
+    )
 }
 
 @Serializable

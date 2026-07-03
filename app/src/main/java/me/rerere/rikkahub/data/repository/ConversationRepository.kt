@@ -25,6 +25,8 @@ import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.CompressionEvent
+import me.rerere.rikkahub.data.model.ConversationCompressionState
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import java.time.Instant
@@ -562,6 +564,8 @@ class ConversationRepository(
             assistantId = conversation.assistantId.toString(),
             chatSuggestions = JsonInstant.encodeToString(conversation.chatSuggestions),
             isPinned = conversation.isPinned,
+            compressionState = JsonInstant.encodeToString(conversation.compressionState),
+            compressionEvents = JsonInstant.encodeToString(conversation.compressionEvents),
             customSystemPrompt = conversation.customSystemPrompt ?: "",
             modeInjectionIds = JsonInstant.encodeToString(conversation.modeInjectionIds),
             lorebookIds = JsonInstant.encodeToString(conversation.lorebookIds),
@@ -583,6 +587,14 @@ class ConversationRepository(
             assistantId = Uuid.parse(conversationEntity.assistantId),
             chatSuggestions = JsonInstant.decodeFromString(conversationEntity.chatSuggestions),
             isPinned = conversationEntity.isPinned,
+            compressionState = conversationEntity.compressionState
+                .takeIf { it.isNotBlank() }
+                ?.let { JsonInstant.decodeFromString<ConversationCompressionState>(it) }
+                ?: ConversationCompressionState(),
+            compressionEvents = conversationEntity.compressionEvents
+                .takeIf { it.isNotBlank() }
+                ?.let { JsonInstant.decodeFromString<List<CompressionEvent>>(it) }
+                ?: emptyList(),
             customSystemPrompt = conversationEntity.customSystemPrompt.ifEmpty { null },
             modeInjectionIds = JsonInstant.decodeFromString(conversationEntity.modeInjectionIds),
             lorebookIds = JsonInstant.decodeFromString(conversationEntity.lorebookIds),

@@ -265,12 +265,12 @@
   <string name="chat_page_compress_additional_prompt">Additional Instructions (Optional)</string>
   <string name="chat_page_compress_additional_prompt_hint">Specify what to preserve or focus on</string>
   <string name="chat_page_compress_context">Compress History</string>
-  <string name="chat_page_compress_context_desc">Compress the conversation into a summary to save tokens</string>
+  <string name="chat_page_compress_context_desc">Compress older conversation turns into a summary while keeping the original messages</string>
   <string name="chat_page_compress_context_title">Compress Conversation History</string>
   <string name="chat_page_compress_keep_recent">Keep recent messages</string>
   <string name="chat_page_compress_not_enough_messages">Not enough messages to compress. Reduce the number of messages to keep or add more messages.</string>
   <string name="chat_page_compress_target_tokens">Target Token Size</string>
-  <string name="chat_page_compress_warning">⚠️ Compressing context will reset all messages in the current conversation</string>
+  <string name="chat_page_compress_warning">Older turns remain in the chat. Future generation uses the summary plus recent messages.</string>
   <string name="chat_page_compressing">Compressing...</string>
   <string name="chat_page_conversation_system_prompt">Conversation System Prompt</string>
   <string name="chat_page_conversation_system_prompt_clear">Clear</string>
@@ -1273,4 +1273,3 @@
   <string name="chat_page_delete_folder_confirm">Delete folder "%1$s"? Conversations inside will not be deleted, only removed from the folder.</string>
   <string name="chat_page_delete_folder_generating">Some conversations in this folder are still generating. Please stop them before deleting.</string>
 </resources>
-
