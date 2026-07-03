@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai.tools
 
+import android.content.Context
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -12,6 +13,7 @@ import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.toMetadata
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.generateUnifiedDiff
 import me.rerere.workspace.WorkspaceCommandResult
@@ -20,6 +22,7 @@ import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.java.KoinJavaComponent.getKoin
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
@@ -66,8 +69,8 @@ private fun createReadFileTool(
     name = "workspace_read_file",
     description = """
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
-        Use /workspace for the workspace files area.
-        Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp).
+        Use /workspace for the workspace files area, and /upload for read-only files uploaded by the user.
+        Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp, svg). Image files are returned as a visible image result plus JSON metadata.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
@@ -275,6 +278,15 @@ private suspend fun WorkspaceRepository.readTextInRootfs(
     workspaceId: String,
     path: String,
 ): String {
+    val uploadFile = resolveUploadFile(path)
+    if (uploadFile != null) {
+        val size = uploadFile.length()
+        require(size <= MAX_READ_FILE_BYTES) {
+            "File is too large to read: $path (${size / 1024 / 1024}MB, max ${MAX_READ_FILE_BYTES / 1024 / 1024}MB). Use shell commands like head, tail, or grep to read parts of it."
+        }
+        return uploadFile.readText(Charsets.UTF_8)
+    }
+
     val (area, relativePath) = rootfsPathToAreaAndRelative(path)
     val size = fileSize(workspaceId, area, relativePath)
     require(size <= MAX_READ_FILE_BYTES) {
@@ -298,10 +310,15 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,
     path: String,
 ): List<UIMessagePart> {
-    val (area, relativePath) = rootfsPathToAreaAndRelative(path)
-    val buffer = ByteArrayOutputStream()
-    exportFile(workspaceId, area, relativePath, buffer)
-    val bytes = buffer.toByteArray()
+    val uploadFile = resolveUploadFile(path)
+    val bytes = if (uploadFile != null) {
+        uploadFile.readBytes()
+    } else {
+        val (area, relativePath) = rootfsPathToAreaAndRelative(path)
+        val buffer = ByteArrayOutputStream()
+        exportFile(workspaceId, area, relativePath, buffer)
+        buffer.toByteArray()
+    }
 
     val filesManager = getKoin().get<FilesManager>()
     val uris = filesManager.createChatFilesByByteArrays(listOf(bytes))
@@ -311,9 +328,26 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
             buildJsonObject {
                 put("path", path)
                 put("description", "Image file read successfully")
+                put("visible_image", true)
             }.toString()
         ),
     )
+}
+
+private fun resolveUploadFile(path: String): File? {
+    val trimmed = path.trimEnd('/')
+    if (trimmed != "/upload" && !trimmed.startsWith("/upload/")) return null
+    val relativePath = trimmed.removePrefix("/upload").trimStart('/')
+    require(relativePath.isNotBlank()) { "Path is not a file: $path" }
+    val context = getKoin().get<Context>()
+    val uploadDir = File(context.filesDir, FileFolders.UPLOAD).canonicalFile
+    val file = File(uploadDir, relativePath).canonicalFile
+    require(file.path == uploadDir.path || file.path.startsWith(uploadDir.path + File.separator)) {
+        "Path escapes upload directory: $path"
+    }
+    require(file.exists()) { "File does not exist: $path" }
+    require(file.isFile) { "Path is not a file: $path" }
+    return file
 }
 
 private suspend fun WorkspaceRepository.writeTextInRootfs(
