@@ -396,8 +396,14 @@ object ConversationSearchToolUI : ToolUIRenderer {
         context.arguments.getStringContent("query") ?: ""
     )
 
-    private fun results(context: ToolUIContext): List<JsonElement> =
-        (context.content as? JsonArray) ?: emptyList()
+    private fun results(context: ToolUIContext): List<JsonElement> {
+        val content = context.content
+        if (content is JsonArray) return content
+        val root = content?.jsonObjectOrNull ?: return emptyList()
+        return root["items"]?.jsonArray
+            ?: root["groups"]?.jsonArray
+            ?: emptyList()
+    }
 
     override fun hasSummary(context: ToolUIContext): Boolean = results(context).isNotEmpty()
 
