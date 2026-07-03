@@ -17,7 +17,8 @@ import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val API_URL = "https://updates.rikka-ai.com/"
+private const val UPDATE_MANIFEST_URL = "https://yuxinjiang218.cloud/rikka/latest.json"
+private val VERSION_REGEX = Regex("""\d+\.\d+\.\d+""")
 
 class UpdateChecker(private val client: OkHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -26,30 +27,27 @@ class UpdateChecker(private val client: OkHttpClient) {
         emit(UiState.Loading)
         emit(
             UiState.Success(
-                data = try {
-                    val response = client.newCall(
-                        Request.Builder()
-                            .url(API_URL)
-                            .get()
-                            .addHeader(
-                                "User-Agent",
-                                "RikkaHub ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
-                            )
-                            .build()
-                    ).await()
-                    if (response.isSuccessful) {
-                        json.decodeFromString<UpdateInfo>(response.body.string())
-                    } else {
-                        throw Exception("Failed to fetch update info")
-                    }
-                } catch (e: Exception) {
-                    throw Exception("Failed to fetch update info", e)
-                }
+                data = fetchUpdateInfo()
             )
         )
     }.catch {
         emit(UiState.Error(it))
     }.flowOn(Dispatchers.IO)
+
+    private suspend fun fetchUpdateInfo(): UpdateInfo {
+        val response = client.newCall(
+            Request.Builder()
+                .url(UPDATE_MANIFEST_URL)
+                .get()
+                .addHeader("Accept", "application/json")
+                .addHeader("User-Agent", updateUserAgent())
+                .build()
+        ).await()
+        if (!response.isSuccessful) {
+            throw Exception("Failed to fetch update manifest: HTTP ${response.code}")
+        }
+        return json.decodeFromString<ServerUpdateManifest>(response.body.string()).toUpdateInfo()
+    }
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {
         runCatching {
@@ -75,6 +73,65 @@ class UpdateChecker(private val client: OkHttpClient) {
             context.openUrl(download.url) // 跳转到下载页面
         }
     }
+}
+
+private fun updateUserAgent(): String = "RikkaHub ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
+
+@Serializable
+private data class ServerUpdateManifest(
+    val version: String,
+    val name: String = "",
+    @kotlinx.serialization.SerialName("published_at")
+    val publishedAt: String = "1970-01-01T00:00:00Z",
+    val changelog: String = "",
+    val downloads: List<ServerUpdateAsset> = emptyList()
+)
+
+@Serializable
+private data class ServerUpdateAsset(
+    val name: String,
+    val url: String,
+    val size: Long,
+    val sha256: String = ""
+)
+
+private fun ServerUpdateManifest.toUpdateInfo(): UpdateInfo {
+    val downloads = downloads
+        .filter { it.name.endsWith(".apk", ignoreCase = true) }
+        .map {
+            UpdateDownload(
+                name = it.name,
+                url = it.url,
+                size = formatSize(it.size)
+            )
+        }
+    if (downloads.isEmpty()) {
+        throw Exception("Update manifest has no APK downloads")
+    }
+    return UpdateInfo(
+        version = normalizeVersion(version, name, BuildConfig.VERSION_NAME),
+        publishedAt = publishedAt,
+        changelog = changelog.ifBlank { "No changelog." },
+        downloads = downloads
+    )
+}
+
+internal fun extractSemverCore(raw: String): String? {
+    return VERSION_REGEX.find(raw)?.value
+}
+
+internal fun normalizeVersion(tagName: String, releaseName: String, fallbackVersion: String): String {
+    return extractSemverCore(tagName)
+        ?: extractSemverCore(releaseName)
+        ?: fallbackVersion
+}
+
+private fun formatSize(bytes: Long): String {
+    if (bytes < 1024) return "${bytes} B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format("%.1f KB", kb)
+    val mb = kb / 1024.0
+    return String.format("%.1f MB", mb)
 }
 
 @Serializable
