@@ -30,6 +30,7 @@ import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.DatabaseUtil
@@ -79,8 +80,8 @@ class RikkaHubApp : Application() {
         // check workspace integrity (remove orphaned DB records after backup restore)
         checkWorkspaceIntegrity()
 
-        // sync upload files to DB
-        syncManagedFiles()
+        // sync upload files to DB and remove stale upload files
+        syncAndCleanupManagedFiles()
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
@@ -144,12 +145,23 @@ class RikkaHubApp : Application() {
         }
     }
 
-    private fun syncManagedFiles() {
+    private fun syncAndCleanupManagedFiles() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
-                get<FilesManager>().syncFolder()
+                val filesManager = get<FilesManager>()
+                filesManager.syncFolder()
+                val settings = get<SettingsStore>().settingsFlowRaw.first()
+                val extraReferencedUris = settings.assistants.flatMap { assistant ->
+                    buildList {
+                        (assistant.avatar as? Avatar.Image)?.url?.let(::add)
+                        assistant.background?.let(::add)
+                    }
+                }.toSet()
+                val unreferenced = filesManager.cleanupUnreferencedUploads(extraReferencedUris)
+                val expired = filesManager.cleanupExpiredUploads(extraReferencedUris = extraReferencedUris)
+                Log.i(TAG, "syncAndCleanupManagedFiles: deleted $unreferenced unreferenced, $expired expired upload files")
             }.onFailure {
-                Log.e(TAG, "syncManagedFiles failed", it)
+                Log.e(TAG, "syncAndCleanupManagedFiles failed", it)
             }
         }
     }

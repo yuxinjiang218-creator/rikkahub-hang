@@ -40,6 +40,9 @@ interface MessageNodeDAO {
     @Query("DELETE FROM message_node WHERE id = :nodeId")
     suspend fun deleteById(nodeId: String)
 
+    @Query("SELECT EXISTS(SELECT 1 FROM message_node WHERE messages LIKE '%' || :needle || '%' LIMIT 1)")
+    suspend fun existsMessageContaining(needle: String): Boolean
+
     // 使用 @RawQuery 绕过 Room 编译期校验，以便使用 json_each() 虚拟表
     @RawQuery
     suspend fun getTokenStatsRaw(query: SupportSQLiteQuery): MessageTokenStats
@@ -81,4 +84,3 @@ suspend fun MessageNodeDAO.getMessageCountPerDay(startDate: String): List<Messag
             arrayOf(startDate)
         )
     )
-
