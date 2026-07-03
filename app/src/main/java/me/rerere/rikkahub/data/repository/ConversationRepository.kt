@@ -267,6 +267,80 @@ class ConversationRepository(
         }
     }
 
+    suspend fun mergeFromBackupDatabase(backupDatabase: AppDatabase): BackupDatabaseMergeResult {
+        val backupConversationDAO = backupDatabase.conversationDao()
+        val backupMessageNodeDAO = backupDatabase.messageNodeDao()
+        val backupMemoryDAO = backupDatabase.memoryDao()
+        val currentMemoryDAO = database.memoryDao()
+        var inserted = 0
+        var updated = 0
+        var skipped = 0
+        var insertedMemories = 0
+        var skippedMemories = 0
+
+        database.withTransaction {
+            backupConversationDAO.getAllIds().forEach { conversationId ->
+                val backupConversation = backupConversationDAO.getConversationById(conversationId)
+                    ?: return@forEach
+                val currentConversation = conversationDAO.getConversationById(conversationId)
+                if (!shouldImportBackupConversation(currentConversation?.updateAt, backupConversation.updateAt)) {
+                    skipped++
+                    return@forEach
+                }
+
+                val backupNodes = backupMessageNodeDAO.getNodesOfConversation(conversationId)
+                if (currentConversation == null) {
+                    conversationDAO.insert(backupConversation)
+                    inserted++
+                } else {
+                    conversationDAO.update(backupConversation)
+                    messageNodeDAO.deleteByConversation(conversationId)
+                    updated++
+                }
+                if (backupNodes.isNotEmpty()) {
+                    messageNodeDAO.insertAll(backupNodes)
+                }
+            }
+
+            val existingMemoryKeys = currentMemoryDAO.getAllMemories()
+                .mapTo(hashSetOf()) { memory ->
+                    memory.assistantId to normalizeMemoryContent(memory.content)
+                }
+            backupMemoryDAO.getAllMemories().forEach { backupMemory ->
+                val normalizedContent = normalizeMemoryContent(backupMemory.content)
+                val memoryKey = backupMemory.assistantId to normalizedContent
+                if (!existingMemoryKeys.add(memoryKey)) {
+                    skippedMemories++
+                    return@forEach
+                }
+                currentMemoryDAO.insertMemory(
+                    backupMemory.copy(
+                        id = 0,
+                        content = normalizedContent,
+                    )
+                )
+                insertedMemories++
+            }
+        }
+
+        val changed = inserted + updated
+        if (changed > 0) {
+            rebuildAllIndexes()
+        }
+        return BackupDatabaseMergeResult(
+            conversations = ConversationMergeResult(
+                inserted = inserted,
+                updated = updated,
+                skipped = skipped,
+            ),
+            memories = MemoryMergeResult(
+                inserted = insertedMemories,
+                updated = 0,
+                skipped = skippedMemories,
+            ),
+        )
+    }
+
     suspend fun deleteConversation(conversation: Conversation) {
         // 获取完整的 Conversation（包含 messageNodes）以正确清理文件
         val fullConversation = if (conversation.messageNodes.isEmpty()) {
@@ -629,3 +703,27 @@ data class ConversationPageResult(
     val items: List<Conversation>,
     val nextOffset: Int?,
 )
+
+data class BackupDatabaseMergeResult(
+    val conversations: ConversationMergeResult,
+    val memories: MemoryMergeResult,
+)
+
+data class ConversationMergeResult(
+    val inserted: Int,
+    val updated: Int,
+    val skipped: Int,
+)
+
+data class MemoryMergeResult(
+    val inserted: Int,
+    val updated: Int,
+    val skipped: Int,
+)
+
+internal fun normalizeMemoryContent(content: String): String =
+    content.trim().replace(Regex("\\s+"), " ")
+
+internal fun shouldImportBackupConversation(currentUpdateAt: Long?, backupUpdateAt: Long): Boolean {
+    return currentUpdateAt == null || backupUpdateAt > currentUpdateAt
+}
