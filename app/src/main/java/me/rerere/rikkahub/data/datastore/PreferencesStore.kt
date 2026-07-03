@@ -84,6 +84,7 @@ class SettingsStore(
         // 模型选择
         val ENABLE_WEB_SEARCH = booleanPreferencesKey("enable_web_search")
         val PRESERVE_WEB_SEARCH_CONTEXT = booleanPreferencesKey("preserve_web_search_context")
+        val MANUAL_COMPRESS_KEEP_RECENT_MESSAGES = intPreferencesKey("manual_compress_keep_recent_messages")
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val FAST_MODEL = stringPreferencesKey("fast_model")
@@ -166,6 +167,7 @@ class SettingsStore(
             Settings(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                 preserveWebSearchContext = preferences[PRESERVE_WEB_SEARCH_CONTEXT] == true,
+                manualCompressKeepRecentMessages = preferences[MANUAL_COMPRESS_KEEP_RECENT_MESSAGES] ?: 6,
                 favoriteModels = preferences[FAVORITE_MODELS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -361,6 +363,7 @@ class SettingsStore(
 
             preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
             preferences[PRESERVE_WEB_SEARCH_CONTEXT] = settings.preserveWebSearchContext
+            preferences[MANUAL_COMPRESS_KEEP_RECENT_MESSAGES] = settings.manualCompressKeepRecentMessages.coerceAtLeast(0)
             preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settings.favoriteModels)
             preferences[SELECT_MODEL] = settings.chatModelId.toString()
             preferences[FAST_MODEL] = settings.fastModelId.toString()
@@ -504,6 +507,7 @@ data class Settings(
     val displaySetting: DisplaySetting = DisplaySetting(),
     val enableWebSearch: Boolean = false,
     val preserveWebSearchContext: Boolean = false,
+    val manualCompressKeepRecentMessages: Int = 6,
     val favoriteModels: List<Uuid> = emptyList(),
     val chatModelId: Uuid = Uuid.random(),
     val fastModelId: Uuid = Uuid.random(),

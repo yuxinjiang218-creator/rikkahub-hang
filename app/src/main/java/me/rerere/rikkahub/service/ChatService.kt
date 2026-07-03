@@ -653,6 +653,7 @@ class ChatService(
                 messages = prepareMessagesForModelContext(
                     messages = messagesForGeneration,
                     preserveWebSearchContext = settings.preserveWebSearchContext,
+                    preserveChatHistoryToolContext = assistant.preserveChatHistoryToolContext,
                 ),
                 assistant = assistant,
                 conversationSystemPrompt = conversation.customSystemPrompt,

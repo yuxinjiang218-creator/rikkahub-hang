@@ -113,6 +113,9 @@
   <string name="assistant_page_quick_messages">クイックメッセージ</string>
   <string name="assistant_page_recent_chats">最近のチャット履歴を参照</string>
   <string name="assistant_page_recent_chats_desc">有効にすると、アシスタントが過去の会話から関連情報を検索できるようになります</string>
+  <string name="assistant_page_preserve_recent_chats_context">履歴検索結果本文を保持</string>
+  <string name="assistant_page_preserve_recent_chats_context_off_desc">次のメッセージ送信後、以前の履歴検索と読み取り結果本文をモデルコンテキストから消去します</string>
+  <string name="assistant_page_preserve_recent_chats_context_on_desc">以前の履歴検索と読み取り結果本文を以後のモデルコンテキストにも保持します</string>
   <string name="assistant_page_regex_affecting_scopes">影響範囲：</string>
   <string name="assistant_page_regex_desc">メッセージの送受信前に変換する正規表現パターンを定義</string>
   <string name="assistant_page_regex_find_regex">正規表現を検索</string>
@@ -264,11 +267,13 @@
   <string name="chat_page_compress_additional_prompt_hint">保持または重点的に扱う内容を指定</string>
   <string name="chat_page_compress_context">履歴を圧縮</string>
   <string name="chat_page_compress_context_desc">会話を要約して圧縮し、トークンを節約します</string>
+  <string name="chat_page_compress_context_desc_v2">古い会話を要約に圧縮し、元のメッセージは保持します</string>
   <string name="chat_page_compress_context_title">会話履歴を圧縮</string>
   <string name="chat_page_compress_keep_recent">最近のメッセージを保持</string>
   <string name="chat_page_compress_not_enough_messages">圧縮するためのメッセージが不足しています。保持するメッセージ数を減らすか、メッセージを追加してください。</string>
   <string name="chat_page_compress_target_tokens">ターゲットトークンサイズ</string>
   <string name="chat_page_compress_warning">⚠️ コンテキストを圧縮すると、現在の会話のすべてのメッセージがリセットされます</string>
+  <string name="chat_page_compress_warning_v2">古いメッセージはチャットに残ります。以後の生成では要約と最近のメッセージを使用します。</string>
   <string name="chat_page_compressing">圧縮中…</string>
   <string name="chat_page_conversation_system_prompt">会話システムプロンプト</string>
   <string name="chat_page_conversation_system_prompt_clear">クリア</string>

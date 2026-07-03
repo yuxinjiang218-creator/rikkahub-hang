@@ -123,6 +123,30 @@ class WebSearchContextSanitizerTest {
         })
     }
 
+    @Test
+    fun `preserve chat history mode keeps historical chat history outputs`() {
+        val historyTool = executedTool(
+            "history_search_call",
+            "conversation_search",
+            """{"query":"old decision"}""",
+            """{"items":[{"snippet":"historical"}]}""",
+        )
+        val messages = listOf(
+            UIMessage(role = MessageRole.ASSISTANT, parts = listOf(historyTool)),
+            UIMessage(role = MessageRole.USER, parts = listOf(UIMessagePart.Text("new prompt"))),
+        )
+
+        val prepared = prepareMessagesForModelContext(
+            messages = messages,
+            preserveWebSearchContext = false,
+            preserveChatHistoryToolContext = true,
+        )
+
+        assertEquals("""{"items":[{"snippet":"historical"}]}""", prepared[0].getTools().single().output.single().let {
+            (it as UIMessagePart.Text).text
+        })
+    }
+
     private fun executedTool(
         toolCallId: String,
         toolName: String,

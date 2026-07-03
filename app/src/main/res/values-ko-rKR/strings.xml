@@ -113,6 +113,9 @@
   <string name="assistant_page_quick_messages">빠른 메시지</string>
   <string name="assistant_page_recent_chats">최근 채팅 참조</string>
   <string name="assistant_page_recent_chats_desc">활성화되면 어시스턴트가 과거 대화에서 관련 정보를 검색할 수 있습니다.</string>
+  <string name="assistant_page_preserve_recent_chats_context">기록 검색 결과 본문 유지</string>
+  <string name="assistant_page_preserve_recent_chats_context_off_desc">다음 메시지를 보내면 이전 기록 검색 및 읽기 결과 본문이 모델 컨텍스트에서 정리됩니다</string>
+  <string name="assistant_page_preserve_recent_chats_context_on_desc">이전 기록 검색 및 읽기 결과 본문이 이후 모델 컨텍스트에도 유지됩니다</string>
   <string name="assistant_page_regex_affecting_scopes">영향 범위:</string>
   <string name="assistant_page_regex_desc">메시지를 보내거나 받기 전에 변환할 정규식 패턴을 정의하세요</string>
   <string name="assistant_page_regex_find_regex">정규식 찾기</string>
@@ -264,11 +267,13 @@
   <string name="chat_page_compress_additional_prompt_hint">보존하거나 집중할 내용을 지정하세요</string>
   <string name="chat_page_compress_context">기록 압축</string>
   <string name="chat_page_compress_context_desc">대화를 요약하여 토큰을 절약하세요</string>
+  <string name="chat_page_compress_context_desc_v2">이전 대화 턴을 요약으로 압축하되 원본 메시지는 유지합니다</string>
   <string name="chat_page_compress_context_title">대화 기록 압축</string>
   <string name="chat_page_compress_keep_recent">최근 메시지 유지</string>
   <string name="chat_page_compress_not_enough_messages">압축할 메시지가 부족합니다. 유지할 메시지 수를 줄이거나 더 많은 메시지를 추가하세요.</string>
   <string name="chat_page_compress_target_tokens">대상 토큰 크기</string>
   <string name="chat_page_compress_warning">⚠️ 문맥 압축 시 현재 대화의 모든 메시지가 초기화됩니다</string>
+  <string name="chat_page_compress_warning_v2">이전 메시지는 채팅에 남아 있습니다. 이후 생성은 요약과 최근 메시지를 사용합니다.</string>
   <string name="chat_page_compressing">압축 중...</string>
   <string name="chat_page_conversation_system_prompt">대화 시스템 프롬프트</string>
   <string name="chat_page_conversation_system_prompt_clear">지우기</string>

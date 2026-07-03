@@ -17,14 +17,16 @@ private const val CLEARED_TOOL_OUTPUT = """{"cleared":true}"""
 fun prepareMessagesForModelContext(
     messages: List<UIMessage>,
     preserveWebSearchContext: Boolean,
+    preserveChatHistoryToolContext: Boolean = false,
 ): List<UIMessage> {
-    return clearHistoricalChatHistoryResultsForModelContext(
-        messages = if (preserveWebSearchContext) {
-            messages
-        } else {
-            clearHistoricalWebSearchResultsForModelContext(messages)
-        }
-    )
+    var prepared = messages
+    if (!preserveWebSearchContext) {
+        prepared = clearHistoricalWebSearchResultsForModelContext(prepared)
+    }
+    if (!preserveChatHistoryToolContext) {
+        prepared = clearHistoricalChatHistoryResultsForModelContext(prepared)
+    }
+    return prepared
 }
 
 fun clearHistoricalWebSearchResultsForModelContext(messages: List<UIMessage>): List<UIMessage> =

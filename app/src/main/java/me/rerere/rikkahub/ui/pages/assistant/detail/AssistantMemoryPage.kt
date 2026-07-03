@@ -225,6 +225,31 @@ private fun AssistantMemoryContent(
                 }
             )
             item(
+                headlineContent = { Text(stringResource(R.string.assistant_page_preserve_recent_chats_context)) },
+                supportingContent = {
+                    Text(
+                        text = if (assistant.preserveChatHistoryToolContext) {
+                            stringResource(R.string.assistant_page_preserve_recent_chats_context_on_desc)
+                        } else {
+                            stringResource(R.string.assistant_page_preserve_recent_chats_context_off_desc)
+                        },
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.preserveChatHistoryToolContext,
+                        onCheckedChange = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    preserveChatHistoryToolContext = it
+                                )
+                            )
+                        },
+                        enabled = assistant.enableRecentChatsReference
+                    )
+                }
+            )
+            item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder)) },
                 supportingContent = {
                     Text(

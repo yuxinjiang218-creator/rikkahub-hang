@@ -113,6 +113,9 @@
   <string name="assistant_page_quick_messages">快速訊息</string>
   <string name="assistant_page_recent_chats">參考歷史聊天記錄</string>
   <string name="assistant_page_recent_chats_desc">啟用時，允許助手搜尋過去的對話以獲取相關資訊</string>
+  <string name="assistant_page_preserve_recent_chats_context">保留歷史檢索結果正文</string>
+  <string name="assistant_page_preserve_recent_chats_context_off_desc">使用者再次傳送訊息後，歷史檢索和回讀結果正文會從模型上下文中清理</string>
+  <string name="assistant_page_preserve_recent_chats_context_on_desc">歷史檢索和回讀結果正文會繼續進入後續模型上下文</string>
   <string name="assistant_page_regex_affecting_scopes">影響範圍：</string>
   <string name="assistant_page_regex_desc">定義正規表示式模式，在傳送或接收前轉換訊息</string>
   <string name="assistant_page_regex_find_regex">尋找正規表示式</string>
@@ -264,11 +267,13 @@
   <string name="chat_page_compress_additional_prompt_hint">指定要保留或聚焦的內容</string>
   <string name="chat_page_compress_context">壓縮歷史</string>
   <string name="chat_page_compress_context_desc">將對話壓縮成摘要以節省 token</string>
+  <string name="chat_page_compress_context_desc_v2">將較早的對話輪次壓縮成摘要，同時保留原訊息</string>
   <string name="chat_page_compress_context_title">壓縮對話紀錄</string>
   <string name="chat_page_compress_keep_recent">保留最近訊息</string>
   <string name="chat_page_compress_not_enough_messages">訊息不足，無法壓縮。請減少要保留的訊息數量，或新增更多訊息。</string>
   <string name="chat_page_compress_target_tokens">目標 Token 大小</string>
   <string name="chat_page_compress_warning">⚠️ 壓縮上下文將重設目前對話中的所有訊息</string>
+  <string name="chat_page_compress_warning_v2">較早訊息仍會保留在聊天中。後續生成會使用摘要和最近訊息。</string>
   <string name="chat_page_compressing">正在壓縮...</string>
   <string name="chat_page_conversation_system_prompt">對話系統提示</string>
   <string name="chat_page_conversation_system_prompt_clear">清除</string>

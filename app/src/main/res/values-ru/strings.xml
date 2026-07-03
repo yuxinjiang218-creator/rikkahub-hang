@@ -113,6 +113,9 @@
   <string name="assistant_page_quick_messages">Быстрые сообщения</string>
   <string name="assistant_page_recent_chats">Справка: недавние чаты</string>
   <string name="assistant_page_recent_chats_desc">Когда включено, позволяет ассистенту искать релевантную информацию в предыдущих разговорах.</string>
+  <string name="assistant_page_preserve_recent_chats_context">Сохранять текст результатов поиска по истории</string>
+  <string name="assistant_page_preserve_recent_chats_context_off_desc">После отправки следующего сообщения прежние результаты поиска и чтения истории очищаются из контекста модели</string>
+  <string name="assistant_page_preserve_recent_chats_context_on_desc">Прежние результаты поиска и чтения истории остаются в последующем контексте модели</string>
   <string name="assistant_page_regex_affecting_scopes">Области действия:</string>
   <string name="assistant_page_regex_desc">Задайте шаблоны регулярных выражений для преобразования сообщений перед отправкой/получением</string>
   <string name="assistant_page_regex_find_regex">Найти регулярное выражение</string>
@@ -264,11 +267,13 @@
   <string name="chat_page_compress_additional_prompt_hint">Укажите, что сохранить или на чём сосредоточиться</string>
   <string name="chat_page_compress_context">Сжать историю</string>
   <string name="chat_page_compress_context_desc">Сжать переписку в краткое резюме, чтобы сэкономить токены</string>
+  <string name="chat_page_compress_context_desc_v2">Сжать старые реплики в резюме, сохранив исходные сообщения</string>
   <string name="chat_page_compress_context_title">Сжать историю чата</string>
   <string name="chat_page_compress_keep_recent">Сохранять недавние сообщения</string>
   <string name="chat_page_compress_not_enough_messages">Недостаточно сообщений для сжатия. Уменьшите количество сохраняемых сообщений или добавьте больше сообщений.</string>
   <string name="chat_page_compress_target_tokens">Целевой размер токенов</string>
   <string name="chat_page_compress_warning">⚠️ Сжатие контекста приведёт к сбросу всех сообщений в текущем диалоге</string>
+  <string name="chat_page_compress_warning_v2">Старые сообщения останутся в чате. Следующие генерации используют резюме и недавние сообщения.</string>
   <string name="chat_page_compressing">Сжатие...</string>
   <string name="chat_page_conversation_system_prompt">Системный запрос для беседы</string>
   <string name="chat_page_conversation_system_prompt_clear">Очистить</string>

@@ -70,6 +70,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
@@ -108,6 +109,8 @@ internal fun FilesPicker(
     onPickFile: () -> Unit,
 ) {
     val settings = LocalSettings.current
+    val settingsStore = koinInject<SettingsStore>()
+    val scope = rememberCoroutineScope()
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
@@ -290,12 +293,23 @@ internal fun FilesPicker(
 
     // Compress Context Dialog
     if (showCompressDialog) {
-        CompressContextDialog(onDismiss = {
-            onShowCompressDialogChange(false)
-            onDismiss()
-        }, onConfirm = { additionalPrompt, targetTokens, keepRecentMessages ->
-            onCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
-        })
+        CompressContextDialog(
+            onDismiss = {
+                onShowCompressDialogChange(false)
+                onDismiss()
+            },
+            initialKeepRecentMessages = settings.manualCompressKeepRecentMessages,
+            onConfirm = { additionalPrompt, targetTokens, keepRecentMessages ->
+                scope.launch {
+                    settingsStore.update(
+                        settings.copy(manualCompressKeepRecentMessages = keepRecentMessages.coerceAtLeast(0))
+                    )
+                }
+                onCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
+                onShowCompressDialogChange(false)
+                onDismiss()
+            }
+        )
     }
 }
 

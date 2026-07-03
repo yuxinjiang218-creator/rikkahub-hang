@@ -163,6 +163,8 @@ private fun SearchPicker(
         BuiltInSearchSetting(model = model)
     }
 
+    SearchContextRetentionSetting(settings = settings)
+
     // 如果没有开启内置搜索，显示搜索服务选择
     if (model?.tools?.contains(BuiltInTools.Search) != true) {
         AppSearchSettings(
@@ -174,6 +176,49 @@ private fun SearchPicker(
             settings = settings,
             onUpdateSearchService = onUpdateSearchService
         )
+    }
+}
+
+@Composable
+private fun SearchContextRetentionSetting(settings: Settings) {
+    val settingsStore = koinInject<SettingsStore>()
+    val scope = rememberCoroutineScope()
+    Card {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(HugeIcons.Search01, null)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "保留搜索结果正文",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = if (settings.preserveWebSearchContext) {
+                        "历史搜索和抓取结果正文会继续保留"
+                    } else {
+                        "默认保留搜索卡片，清理历史结果正文"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalContentColor.current.copy(alpha = 0.8f)
+                )
+            }
+            Switch(
+                checked = settings.preserveWebSearchContext,
+                onCheckedChange = { checked ->
+                    scope.launch {
+                        settingsStore.update(settings.copy(preserveWebSearchContext = checked))
+                    }
+                }
+            )
+        }
     }
 }
 

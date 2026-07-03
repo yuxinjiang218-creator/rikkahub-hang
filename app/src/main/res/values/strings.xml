@@ -113,6 +113,9 @@
   <string name="assistant_page_quick_messages">Quick Messages</string>
   <string name="assistant_page_recent_chats">Reference Recent Chats</string>
   <string name="assistant_page_recent_chats_desc">When enabled, allows the assistant to search past conversations for relevant information</string>
+  <string name="assistant_page_preserve_recent_chats_context">Keep history recall result text</string>
+  <string name="assistant_page_preserve_recent_chats_context_off_desc">After you send another message, previous history recall and read results are cleared from model context</string>
+  <string name="assistant_page_preserve_recent_chats_context_on_desc">Previous history recall and read results remain in later model context</string>
   <string name="assistant_page_regex_affecting_scopes">Affecting Scopes:</string>
   <string name="assistant_page_regex_desc">Define regex patterns to transform messages before sending/receiving</string>
   <string name="assistant_page_regex_find_regex">Find Regex</string>
@@ -266,11 +269,13 @@
   <string name="chat_page_compress_additional_prompt_hint">Specify what to preserve or focus on</string>
   <string name="chat_page_compress_context">Compress History</string>
   <string name="chat_page_compress_context_desc">Compress older conversation turns into a summary while keeping the original messages</string>
+  <string name="chat_page_compress_context_desc_v2">Compress older conversation turns into a summary while keeping the original messages</string>
   <string name="chat_page_compress_context_title">Compress Conversation History</string>
   <string name="chat_page_compress_keep_recent">Keep recent messages</string>
   <string name="chat_page_compress_not_enough_messages">Not enough messages to compress. Reduce the number of messages to keep or add more messages.</string>
   <string name="chat_page_compress_target_tokens">Target Token Size</string>
   <string name="chat_page_compress_warning">Older turns remain in the chat. Future generation uses the summary plus recent messages.</string>
+  <string name="chat_page_compress_warning_v2">Older turns remain in the chat. Future generation uses the summary plus recent messages.</string>
   <string name="chat_page_compressing">Compressing...</string>
   <string name="chat_page_conversation_system_prompt">Conversation System Prompt</string>
   <string name="chat_page_conversation_system_prompt_clear">Clear</string>
