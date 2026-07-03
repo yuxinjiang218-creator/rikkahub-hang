@@ -565,7 +565,7 @@ class ChatService(
                     }
                     addAll(localTools.getTools(assistant.localTools))
                     if (assistant.enableRecentChatsReference) {
-                        addAll(createConversationTools(conversationRepo, assistant.id))
+                        addAll(createConversationTools(conversationRepo, assistant.id, conversation.id, conversation.currentMessages))
                     }
                     addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
                     if (assistant.enabledSkills.isNotEmpty()) {

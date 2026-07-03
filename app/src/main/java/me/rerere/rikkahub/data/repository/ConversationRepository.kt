@@ -10,9 +10,13 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
+import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
@@ -38,6 +42,8 @@ class ConversationRepository(
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
     }
+
+    private val messageIndexMutex = Mutex()
 
     suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10): List<Conversation> {
         return conversationDAO.getRecentConversationsOfAssistant(
@@ -240,7 +246,10 @@ class ConversationRepository(
             )
             saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
         }
-        messageFtsManager.indexConversation(conversation)
+        messageIndexMutex.withLock {
+            messageFtsManager.indexConversation(conversation)
+            markMessageIndexReadyIfTrivialLocked()
+        }
     }
 
     suspend fun updateConversation(conversation: Conversation) {
@@ -252,7 +261,10 @@ class ConversationRepository(
             messageNodeDAO.deleteByConversation(conversation.id.toString())
             saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
         }
-        messageFtsManager.indexConversation(conversation)
+        messageIndexMutex.withLock {
+            messageFtsManager.indexConversation(conversation)
+            markMessageIndexReadyIfTrivialLocked()
+        }
     }
 
     suspend fun deleteConversation(conversation: Conversation) {
@@ -262,7 +274,9 @@ class ConversationRepository(
         } else {
             conversation
         }
-        messageFtsManager.deleteConversation(conversation.id.toString())
+        messageIndexMutex.withLock {
+            messageFtsManager.deleteConversation(conversation.id.toString())
+        }
         database.withTransaction {
             // message_node 会通过 CASCADE 自动删除
             conversationDAO.delete(
@@ -275,9 +289,175 @@ class ConversationRepository(
     suspend fun searchMessages(
         keyword: String,
         sort: MessageSearchSort = MessageSearchSort.RELEVANCE,
-    ) = messageFtsManager.search(keyword, sort)
+    ) = messageIndexMutex.withLock {
+        if (keyword.isBlank()) return@withLock emptyList()
+        ensureMessageIndexReadyLocked()
+        messageFtsManager.search(keyword, sort)
+    }
+
+    suspend fun searchAssistantHistory(
+        assistantId: Uuid,
+        keyword: String,
+        currentConversationId: Uuid? = null,
+        focusConversationId: Uuid? = null,
+        role: MessageRole? = null,
+        limit: Int = DEFAULT_HISTORY_SEARCH_LIMIT,
+        excludeSnippetKeys: Set<String> = emptySet(),
+    ): List<MessageSearchResult> = messageIndexMutex.withLock {
+        if (keyword.isBlank()) return@withLock emptyList()
+        ensureMessageIndexReadyLocked()
+        val normalizedLimit = normalizeHistorySearchLimit(limit)
+        val plan = buildHistoryQueryPlan(keyword)
+        val perQueryFetchLimit = (normalizedLimit * 4)
+            .coerceAtLeast(24)
+            .coerceAtMost(MAX_HISTORY_SEARCH_FETCH_LIMIT)
+        val assistantIdValue = assistantId.toString()
+        val conversationIdValue = currentConversationId?.toString()
+        val focusConversationIdValue = focusConversationId?.toString()
+        val roleValue = role?.name?.lowercase()
+
+        val rawResults = if (plan.rawQuery.isBlank()) {
+            emptyList()
+        } else {
+            messageFtsManager.searchAssistantHistory(
+                assistantId = assistantIdValue,
+                keyword = plan.rawQuery,
+                excludeConversationId = conversationIdValue,
+                conversationId = focusConversationIdValue,
+                role = roleValue,
+                limit = perQueryFetchLimit,
+                selectedOnly = true,
+            )
+        }
+        val segmentResults = plan.segmentQueries.map { query ->
+            messageFtsManager.searchAssistantHistory(
+                assistantId = assistantIdValue,
+                keyword = query,
+                excludeConversationId = conversationIdValue,
+                conversationId = focusConversationIdValue,
+                role = roleValue,
+                limit = perQueryFetchLimit,
+                selectedOnly = true,
+            )
+        }
+        val tokenResults = plan.tokenQueries.map { query ->
+            messageFtsManager.searchAssistantHistory(
+                assistantId = assistantIdValue,
+                keyword = query,
+                excludeConversationId = conversationIdValue,
+                conversationId = focusConversationIdValue,
+                role = roleValue,
+                limit = perQueryFetchLimit,
+                selectedOnly = true,
+            )
+        }
+
+        val mergedResults = mergeHistoryRouteCandidates(
+            rawCandidates = buildRouteCandidates(
+                route = HistorySearchRoute.RAW,
+                routeResults = listOf(rawResults),
+            ),
+            segmentCandidates = buildRouteCandidates(
+                route = HistorySearchRoute.SEGMENT,
+                routeResults = segmentResults,
+            ),
+            tokenCandidates = buildRouteCandidates(
+                route = HistorySearchRoute.TOKEN,
+                routeResults = tokenResults,
+                totalTokenCount = plan.tokenQueries.size,
+            ),
+        )
+        val filteredResults = filterNewHistorySearchResults(
+            results = mergedResults,
+            seenSnippetKeys = excludeSnippetKeys,
+        )
+        selectHistorySearchCandidates(
+            results = filteredResults,
+            requestedLimit = normalizedLimit,
+            perConversationLimit = if (focusConversationId == null) {
+                HISTORY_SEARCH_PER_CONVERSATION_LIMIT
+            } else {
+                normalizedLimit
+            },
+        )
+    }
+
+    suspend fun readAssistantHistory(
+        refs: List<String>,
+        before: Int = DEFAULT_HISTORY_READ_BEFORE,
+        after: Int = DEFAULT_HISTORY_READ_AFTER,
+    ): List<ConversationHistoryReadResult> {
+        val normalizedRefs = normalizeHistoryReadRefs(refs)
+        if (normalizedRefs.isEmpty()) return emptyList()
+
+        val parsedRefs = normalizedRefs.mapNotNull(::parseConversationHistoryRef)
+        if (parsedRefs.isEmpty()) return emptyList()
+
+        val normalizedBefore = normalizeHistoryReadBefore(before)
+        val normalizedAfter = normalizeHistoryReadAfter(after)
+        val conversationsById = mutableMapOf<Uuid, Conversation>()
+        parsedRefs.map { it.conversationId }
+            .distinct()
+            .forEach { conversationId ->
+                getConversationById(conversationId)?.let { conversation ->
+                    conversationsById[conversationId] = conversation
+                }
+            }
+
+        return parsedRefs.mapNotNull { ref ->
+            val conversation = conversationsById[ref.conversationId] ?: return@mapNotNull null
+            val nodeIndex = conversation.messageNodes.indexOfFirst { it.id == ref.nodeId }
+            if (nodeIndex == -1) return@mapNotNull null
+
+            val node = conversation.messageNodes[nodeIndex]
+            val selectedMessage = node.currentMessage
+            if (selectedMessage.id != ref.messageId) return@mapNotNull null
+
+            val startIndex = (nodeIndex - normalizedBefore).coerceAtLeast(0)
+            val endIndex = (nodeIndex + normalizedAfter).coerceAtMost(conversation.messageNodes.lastIndex)
+            val messages = conversation.messageNodes.subList(startIndex, endIndex + 1)
+                .mapIndexedNotNull { index, messageNode ->
+                    val message = messageNode.currentMessage
+                    val text = message.toText().trim()
+                    if (text.isBlank()) return@mapIndexedNotNull null
+                    ConversationHistoryReadMessage(
+                        role = message.role,
+                        createdAt = message.createdAt.toString(),
+                        text = text,
+                        isMatch = startIndex + index == nodeIndex,
+                    )
+                }
+            if (messages.none { it.isMatch }) return@mapNotNull null
+
+            ConversationHistoryReadResult(
+                ref = ref.toString(),
+                conversationId = conversation.id,
+                title = conversation.title,
+                messages = messages,
+            )
+        }
+    }
 
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
+        messageIndexMutex.withLock {
+            rebuildAllIndexesLocked(onProgress)
+        }
+    }
+
+    private suspend fun ensureMessageIndexReadyLocked() {
+        val schemaReady = messageFtsManager.ensureSchema()
+        if (!schemaReady || !messageFtsManager.isReady()) {
+            rebuildAllIndexesLocked()
+        }
+    }
+
+    private suspend fun markMessageIndexReadyIfTrivialLocked() {
+        if (conversationDAO.countAll() <= 1) {
+            messageFtsManager.markReady()
+        }
+    }
+
+    private suspend fun rebuildAllIndexesLocked(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()
         val allIds = conversationDAO.getAllIds()
         val total = allIds.size
@@ -288,6 +468,7 @@ class ConversationRepository(
             messageFtsManager.indexConversation(conversation)
             onProgress(index + 1, total)
         }
+        messageFtsManager.markReady()
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {
