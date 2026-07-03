@@ -110,7 +110,7 @@ private const val TAG = "ChatService"
 
 internal fun backgroundTextGenerationParams(
     model: Model,
-    reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
+    reasoningLevel: ReasoningLevel = ReasoningLevel.OFF,
 ): TextGenerationParams = TextGenerationParams(
     model = model,
     reasoningLevel = reasoningLevel,

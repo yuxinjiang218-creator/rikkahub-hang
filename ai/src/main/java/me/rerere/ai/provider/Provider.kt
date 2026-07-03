@@ -52,14 +52,11 @@ interface Provider<T : ProviderSetting> {
     }
 }
 
-class GenerationAttemptTracker {
-    var attempt: Int = 0
-        private set
-    var httpStatus: Int? = null
-        private set
-    var streamStarted: Boolean = false
-        private set
-
+data class GenerationAttemptTracker(
+    var attempt: Int = 0,
+    var httpStatus: Int? = null,
+    var streamStarted: Boolean = false,
+) {
     fun beginAttempt(attempt: Int) {
         this.attempt = attempt
         httpStatus = null
