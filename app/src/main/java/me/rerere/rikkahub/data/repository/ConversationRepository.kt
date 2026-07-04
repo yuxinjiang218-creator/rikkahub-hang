@@ -7,13 +7,16 @@ import androidx.paging.PagingData
 import androidx.paging.PagingSource
 import androidx.paging.map
 import androidx.room.withTransaction
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
+import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.db.fts.MessageSearchResult
@@ -28,6 +31,8 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.CompressionEvent
 import me.rerere.rikkahub.data.model.ConversationCompressionState
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.sync.vector.VectorRecallConversationSummary
+import me.rerere.rikkahub.data.sync.vector.VectorRecallSyncManager
 import me.rerere.rikkahub.utils.JsonInstant
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -39,6 +44,8 @@ class ConversationRepository(
     private val database: AppDatabase,
     private val filesManager: FilesManager,
     private val messageFtsManager: MessageFtsManager,
+    private val appScope: AppScope,
+    private val vectorRecallSyncManager: VectorRecallSyncManager,
 ) {
     companion object {
         private const val PAGE_SIZE = 20
@@ -241,6 +248,10 @@ class ConversationRepository(
         return conversationDAO.countAll()
     }
 
+    suspend fun getVectorRecallConversationSummaries(): List<VectorRecallConversationSummary> {
+        return conversationDAO.getVectorRecallConversationSummaries()
+    }
+
     suspend fun insertConversation(conversation: Conversation) {
         database.withTransaction {
             conversationDAO.insert(
@@ -252,6 +263,7 @@ class ConversationRepository(
             messageFtsManager.indexConversation(conversation)
             markMessageIndexReadyIfTrivialLocked()
         }
+        scheduleVectorRecallUpload(conversation)
     }
 
     suspend fun updateConversation(conversation: Conversation) {
@@ -266,6 +278,13 @@ class ConversationRepository(
         messageIndexMutex.withLock {
             messageFtsManager.indexConversation(conversation)
             markMessageIndexReadyIfTrivialLocked()
+        }
+        scheduleVectorRecallUpload(conversation)
+    }
+
+    private fun scheduleVectorRecallUpload(conversation: Conversation) {
+        appScope.launch(Dispatchers.IO) {
+            vectorRecallSyncManager.uploadConversation(conversation)
         }
     }
 
@@ -379,8 +398,72 @@ class ConversationRepository(
         role: MessageRole? = null,
         limit: Int = DEFAULT_HISTORY_SEARCH_LIMIT,
         excludeSnippetKeys: Set<String> = emptySet(),
+    ): List<MessageSearchResult> = searchAssistantHistoryWithBackend(
+        assistantId = assistantId,
+        keyword = keyword,
+        currentConversationId = currentConversationId,
+        focusConversationId = focusConversationId,
+        role = role,
+        limit = limit,
+        excludeSnippetKeys = excludeSnippetKeys,
+    ).results
+
+    suspend fun searchAssistantHistoryWithBackend(
+        assistantId: Uuid,
+        keyword: String,
+        currentConversationId: Uuid? = null,
+        focusConversationId: Uuid? = null,
+        role: MessageRole? = null,
+        limit: Int = DEFAULT_HISTORY_SEARCH_LIMIT,
+        excludeSnippetKeys: Set<String> = emptySet(),
+    ): ConversationHistorySearchOutcome {
+        if (keyword.isBlank()) {
+            return ConversationHistorySearchOutcome(
+                results = emptyList(),
+                backend = ConversationHistorySearchBackend.LOCAL_FTS,
+                degraded = false,
+            )
+        }
+        val normalizedLimit = normalizeHistorySearchLimit(limit)
+        val vectorOutcome = vectorRecallSyncManager.search(
+            assistantId = assistantId,
+            keyword = keyword,
+            currentConversationId = currentConversationId,
+            focusConversationId = focusConversationId,
+            role = role,
+            limit = (normalizedLimit * 4).coerceAtLeast(normalizedLimit),
+        )
+        val results = searchAssistantHistoryLocal(
+            assistantId = assistantId,
+            keyword = keyword,
+            currentConversationId = currentConversationId,
+            focusConversationId = focusConversationId,
+            role = role,
+            limit = normalizedLimit,
+            excludeSnippetKeys = excludeSnippetKeys,
+            vectorResults = vectorOutcome.results,
+        )
+        return ConversationHistorySearchOutcome(
+            results = results,
+            backend = if (vectorOutcome.remoteAvailable) {
+                ConversationHistorySearchBackend.VECTOR_REMOTE
+            } else {
+                ConversationHistorySearchBackend.LOCAL_FTS
+            },
+            degraded = vectorOutcome.degraded,
+        )
+    }
+
+    private suspend fun searchAssistantHistoryLocal(
+        assistantId: Uuid,
+        keyword: String,
+        currentConversationId: Uuid?,
+        focusConversationId: Uuid?,
+        role: MessageRole?,
+        limit: Int,
+        excludeSnippetKeys: Set<String>,
+        vectorResults: List<MessageSearchResult>,
     ): List<MessageSearchResult> = messageIndexMutex.withLock {
-        if (keyword.isBlank()) return@withLock emptyList()
         ensureMessageIndexReadyLocked()
         val normalizedLimit = normalizeHistorySearchLimit(limit)
         val plan = buildHistoryQueryPlan(keyword)
@@ -441,6 +524,10 @@ class ConversationRepository(
                 route = HistorySearchRoute.TOKEN,
                 routeResults = tokenResults,
                 totalTokenCount = plan.tokenQueries.size,
+            ),
+            vectorCandidates = buildRouteCandidates(
+                route = HistorySearchRoute.VECTOR,
+                routeResults = listOf(vectorResults),
             ),
         )
         val filteredResults = filterNewHistorySearchResults(

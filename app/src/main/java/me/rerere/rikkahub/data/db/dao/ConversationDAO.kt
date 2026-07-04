@@ -9,6 +9,7 @@ import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.repository.LightConversationEntity
+import me.rerere.rikkahub.data.sync.vector.VectorRecallConversationSummary
 
 @Dao
 interface ConversationDAO {
@@ -50,6 +51,9 @@ interface ConversationDAO {
 
     @Query("SELECT id FROM conversationentity")
     suspend fun getAllIds(): List<String>
+
+    @Query("SELECT id AS conversationId, assistant_id AS assistantId, update_at AS updateAt FROM conversationentity")
+    suspend fun getVectorRecallConversationSummaries(): List<VectorRecallConversationSummary>
 
     @Query("SELECT * FROM conversationentity WHERE id = :id")
     suspend fun getConversationById(id: String): ConversationEntity?

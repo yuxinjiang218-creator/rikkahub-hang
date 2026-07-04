@@ -145,7 +145,7 @@ fun createConversationTools(
                     focusRef.isNotBlank() -> parseFocusConversationIdFromRef(focusRef)
                     else -> parseFocusConversationId(params["conversation_id"]?.jsonPrimitive?.contentOrNull)
                 }
-                val results = conversationRepo.searchAssistantHistory(
+                val searchOutcome = conversationRepo.searchAssistantHistoryWithBackend(
                     assistantId = assistantId,
                     keyword = query,
                     currentConversationId = currentConversationId,
@@ -154,6 +154,7 @@ fun createConversationTools(
                     limit = limit,
                     excludeSnippetKeys = seenSnippetKeys,
                 )
+                val results = searchOutcome.results
                 val newResults = filterNewHistorySearchResults(results, seenSnippetKeys)
                 newResults.forEach { result ->
                     historySnippetKey(
@@ -164,6 +165,8 @@ fun createConversationTools(
                 val payload = buildJsonObject {
                     put("query", query)
                     put("role", roleRaw?.trim()?.lowercase().orEmpty())
+                    put("backend", searchOutcome.backend.value)
+                    put("degraded", searchOutcome.degraded)
                     if (focusConversationId == null) {
                         put("mode", "conversation_groups")
                         put("groups", buildJsonArray {

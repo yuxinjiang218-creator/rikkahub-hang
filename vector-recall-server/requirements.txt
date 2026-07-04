@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlite-vec
+openai
+passlib[bcrypt]
+bcrypt<4.1
+pydantic
+pytest
+httpx

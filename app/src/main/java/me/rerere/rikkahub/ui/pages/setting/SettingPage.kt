@@ -226,6 +226,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_search_service)) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.SettingVectorRecall) },
+                        leadingContent = { Icon(HugeIcons.Database02, null) },
+                        supportingContent = { Text("Remote semantic recall for chat history") },
+                        headlineContent = { Text("Vector Recall") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingSpeech) },
                         leadingContent = { Icon(HugeIcons.Megaphone01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },

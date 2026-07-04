@@ -22,14 +22,27 @@ private const val MIN_ROUTE_QUERY_LENGTH = 2
 private const val MAX_SNIPPET_KEY_LENGTH = 500
 private const val HISTORY_RRF_K = 60.0
 private const val RAW_ROUTE_WEIGHT = 1.0
+private const val VECTOR_ROUTE_WEIGHT = 1.2
 private const val SEGMENT_ROUTE_WEIGHT = 0.8
 private const val TOKEN_ROUTE_WEIGHT = 0.65
 
 enum class HistorySearchRoute {
+    VECTOR,
     RAW,
     SEGMENT,
     TOKEN,
 }
+
+enum class ConversationHistorySearchBackend(val value: String) {
+    VECTOR_REMOTE("vector_remote"),
+    LOCAL_FTS("local_fts"),
+}
+
+data class ConversationHistorySearchOutcome(
+    val results: List<MessageSearchResult>,
+    val backend: ConversationHistorySearchBackend,
+    val degraded: Boolean,
+)
 
 data class HistoryQueryPlan(
     val rawQuery: String,
@@ -210,8 +223,10 @@ fun mergeHistoryRouteCandidates(
     rawCandidates: List<HistoryRouteCandidate>,
     segmentCandidates: List<HistoryRouteCandidate>,
     tokenCandidates: List<HistoryRouteCandidate>,
+    vectorCandidates: List<HistoryRouteCandidate> = emptyList(),
 ): List<MessageSearchResult> {
     val aggregates = linkedMapOf<String, MergeAggregate>()
+    mergeRoute(aggregates, vectorCandidates, VECTOR_ROUTE_WEIGHT)
     mergeRoute(aggregates, rawCandidates, RAW_ROUTE_WEIGHT)
     mergeRoute(aggregates, segmentCandidates, SEGMENT_ROUTE_WEIGHT)
     mergeRoute(aggregates, tokenCandidates, TOKEN_ROUTE_WEIGHT)

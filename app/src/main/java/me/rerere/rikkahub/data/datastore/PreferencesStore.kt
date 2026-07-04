@@ -124,6 +124,9 @@ class SettingsStore(
         // S3
         val S3_CONFIG = stringPreferencesKey("s3_config")
 
+        // Vector Recall
+        val VECTOR_RECALL_CONFIG = stringPreferencesKey("vector_recall_config")
+
         // TTS
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
@@ -219,6 +222,9 @@ class SettingsStore(
                 s3Config = preferences[S3_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: S3Config(),
+                vectorRecallConfig = preferences[VECTOR_RECALL_CONFIG]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: VectorRecallConfig(),
                 ttsProviders = preferences[TTS_PROVIDERS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -398,6 +404,7 @@ class SettingsStore(
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(settings.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
             preferences[S3_CONFIG] = JsonInstant.encodeToString(settings.s3Config)
+            preferences[VECTOR_RECALL_CONFIG] = JsonInstant.encodeToString(settings.vectorRecallConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settings.ttsProviders)
             settings.selectedTTSProviderId?.let {
                 preferences[SELECTED_TTS_PROVIDER] = it.toString()
@@ -534,6 +541,7 @@ data class Settings(
     val mcpServers: List<McpServerConfig> = emptyList(),
     val webDavConfig: WebDavConfig = WebDavConfig(),
     val s3Config: S3Config = S3Config(),
+    val vectorRecallConfig: VectorRecallConfig = VectorRecallConfig(),
     val ttsProviders: List<TTSProviderSetting> = DEFAULT_TTS_PROVIDERS,
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val asrProviders: List<ASRProviderSetting> = emptyList(),

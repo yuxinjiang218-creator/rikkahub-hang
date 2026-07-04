@@ -113,6 +113,39 @@ class ConversationHistoryRecallTest {
     }
 
     @Test
+    fun `mergeHistoryRouteCandidates ranks vector route above raw when refs differ`() {
+        val now = Instant.now()
+        val raw = messageResult("c1", "n1", "m1", now.plusSeconds(2))
+        val vector = messageResult("c2", "n2", "m2", now.plusSeconds(1))
+
+        val merged = mergeHistoryRouteCandidates(
+            rawCandidates = listOf(HistoryRouteCandidate(raw, HistorySearchRoute.RAW, routeHits = 1)),
+            segmentCandidates = emptyList(),
+            tokenCandidates = emptyList(),
+            vectorCandidates = listOf(HistoryRouteCandidate(vector, HistorySearchRoute.VECTOR, routeHits = 1)),
+        )
+
+        assertEquals(listOf("m2", "m1"), merged.map { it.messageId })
+    }
+
+    @Test
+    fun `mergeHistoryRouteCandidates deduplicates vector and local refs`() {
+        val now = Instant.now()
+        val local = messageResult("c1", "n1", "m1", now, snippet = "local snippet")
+        val vector = messageResult("c1", "n1", "m1", now.plusSeconds(1), snippet = "vector snippet")
+
+        val merged = mergeHistoryRouteCandidates(
+            rawCandidates = listOf(HistoryRouteCandidate(local, HistorySearchRoute.RAW, routeHits = 1)),
+            segmentCandidates = emptyList(),
+            tokenCandidates = emptyList(),
+            vectorCandidates = listOf(HistoryRouteCandidate(vector, HistorySearchRoute.VECTOR, routeHits = 1)),
+        )
+
+        assertEquals(listOf("m1"), merged.map { it.messageId })
+        assertEquals("vector snippet", merged.single().snippet)
+    }
+
+    @Test
     fun `historySnippetKey normalizes highlight markers and whitespace`() {
         val key = historySnippetKey("c1:n1:m1", "...User [prefers]\n brief replies...")
 

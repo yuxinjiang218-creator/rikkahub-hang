@@ -30,7 +30,9 @@ import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.WebServerService
+import me.rerere.rikkahub.data.sync.vector.VectorRecallSyncManager
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.DatabaseUtil
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -84,6 +86,9 @@ class RikkaHubApp : Application() {
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
+
+        // Start vector recall handshake/sync if enabled
+        startVectorRecallIfEnabled()
 
         // Increment launch count
         incrementLaunchCount()
@@ -188,6 +193,23 @@ class RikkaHubApp : Application() {
                 }
             }.onFailure {
                 Log.e(TAG, "startWebServerIfEnabled failed", it)
+            }
+        }
+    }
+
+    private fun startVectorRecallIfEnabled() {
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                delay(500)
+                val settings = get<SettingsStore>().settingsFlowRaw.first()
+                if (!settings.vectorRecallConfig.enabled) return@launch
+                val repository = get<ConversationRepository>()
+                get<VectorRecallSyncManager>().syncAll(
+                    summaries = repository.getVectorRecallConversationSummaries(),
+                    loadConversation = { id -> repository.getConversationById(id) },
+                )
+            }.onFailure {
+                Log.e(TAG, "startVectorRecallIfEnabled failed", it)
             }
         }
     }

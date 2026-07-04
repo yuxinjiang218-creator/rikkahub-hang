@@ -35,6 +35,9 @@ import me.rerere.rikkahub.data.db.migrations.Migration_15_16
 import me.rerere.rikkahub.data.db.migrations.Migration_24_25
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.webdav.WebDavSync
+import me.rerere.rikkahub.data.sync.vector.VectorRecallClient
+import me.rerere.rikkahub.data.sync.vector.VectorRecallState
+import me.rerere.rikkahub.data.sync.vector.VectorRecallSyncManager
 import me.rerere.search.SearchService
 import me.rerere.rikkahub.data.sync.S3Sync
 import okhttp3.MediaType.Companion.toMediaType
@@ -241,6 +244,18 @@ val dataSourceModule = module {
             httpClient = get(),
             conversationRepository = get(),
             skillManager = get(),
+        )
+    }
+
+    single { VectorRecallState() }
+
+    single { VectorRecallClient(httpClient = get()) }
+
+    single {
+        VectorRecallSyncManager(
+            settingsStore = get(),
+            client = get(),
+            state = get(),
         )
     }
 
