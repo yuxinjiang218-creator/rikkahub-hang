@@ -288,6 +288,12 @@ class ConversationRepository(
         }
     }
 
+    private fun scheduleVectorRecallDelete(conversationId: Uuid, assistantId: Uuid) {
+        appScope.launch(Dispatchers.IO) {
+            vectorRecallSyncManager.deleteConversation(conversationId, assistantId)
+        }
+    }
+
     suspend fun mergeFromBackupDatabase(backupDatabase: AppDatabase): BackupDatabaseMergeResult {
         val backupConversationDAO = backupDatabase.conversationDao()
         val backupMessageNodeDAO = backupDatabase.messageNodeDao()
@@ -378,6 +384,7 @@ class ConversationRepository(
                 conversationToConversationEntity(conversation)
             )
         }
+        scheduleVectorRecallDelete(conversation.id, conversation.assistantId)
         filesManager.deleteChatFiles(fullConversation.files)
     }
 

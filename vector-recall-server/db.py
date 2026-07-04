@@ -157,6 +157,24 @@ class Database:
         ).fetchall()
         return {f"{r['conversation_id']}:{r['node_id']}:{r['message_id']}" for r in rows}
 
+    def get_conversation_ids_for_assistant(self, user_id: str, assistant_id: str) -> set[str]:
+        rows = self.conn.execute(
+            """
+            SELECT DISTINCT conversation_id
+            FROM messages
+            WHERE user_id = ? AND assistant_id = ?
+            """,
+            (user_id, assistant_id),
+        ).fetchall()
+        return {row["conversation_id"] for row in rows}
+
+    def get_chunk_pks_for_conversation(self, conversation_id: str, user_id: str) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT chunk_pk FROM message_chunks WHERE conversation_id = ? AND user_id = ?",
+            (conversation_id, user_id),
+        ).fetchall()
+        return [row["chunk_pk"] for row in rows]
+
     def upsert_message(self, row: MessageRow) -> None:
         self.conn.execute(
             """
@@ -203,6 +221,39 @@ class Database:
             """,
             (conv_id, node_id, msg_id, user_id),
         )
+
+    def delete_conversation(self, conversation_id: str, user_id: str, assistant_id: str | None = None) -> int:
+        if assistant_id:
+            row = self.conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM messages
+                WHERE conversation_id = ? AND user_id = ? AND assistant_id = ?
+                """,
+                (conversation_id, user_id, assistant_id),
+            ).fetchone()
+            self.conn.execute(
+                "DELETE FROM message_chunks WHERE conversation_id = ? AND user_id = ? AND assistant_id = ?",
+                (conversation_id, user_id, assistant_id),
+            )
+            self.conn.execute(
+                "DELETE FROM messages WHERE conversation_id = ? AND user_id = ? AND assistant_id = ?",
+                (conversation_id, user_id, assistant_id),
+            )
+        else:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ? AND user_id = ?",
+                (conversation_id, user_id),
+            ).fetchone()
+            self.conn.execute(
+                "DELETE FROM message_chunks WHERE conversation_id = ? AND user_id = ?",
+                (conversation_id, user_id),
+            )
+            self.conn.execute(
+                "DELETE FROM messages WHERE conversation_id = ? AND user_id = ?",
+                (conversation_id, user_id),
+            )
+        return int(row["count"] if row else 0)
 
     def get_message_by_pk(self, pk: str, user_id: str) -> MessageRow | None:
         conv_id, node_id, msg_id = pk.split(":", 2)

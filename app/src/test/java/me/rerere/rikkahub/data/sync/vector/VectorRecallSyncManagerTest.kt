@@ -112,4 +112,14 @@ class VectorRecallSyncManagerTest {
         assertEquals("message", response.results.single().messageId)
         assertEquals("chunk snippet", response.results.single().snippet)
     }
+
+    @Test
+    fun `VectorDiffResponse decodes deleted cleanup count`() {
+        val response = JsonInstant.decodeFromString<VectorDiffResponse>(
+            """{"dirty":["conversation"],"deleted":2}"""
+        )
+
+        assertEquals(listOf("conversation"), response.dirty)
+        assertEquals(2, response.deleted)
+    }
 }

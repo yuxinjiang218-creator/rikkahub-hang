@@ -206,6 +206,7 @@ class RikkaHubApp : Application() {
                 val repository = get<ConversationRepository>()
                 get<VectorRecallSyncManager>().syncAll(
                     summaries = repository.getVectorRecallConversationSummaries(),
+                    assistantIds = settings.assistants.map { it.id.toString() }.toSet(),
                     loadConversation = { id -> repository.getConversationById(id) },
                 )
             }.onFailure {

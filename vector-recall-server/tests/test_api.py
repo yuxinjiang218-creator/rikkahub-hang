@@ -118,6 +118,46 @@ def test_upload_deletes_stale_messages(tmp_path, monkeypatch):
     assert second.json() == {"synced": 1, "deleted": 1}
 
 
+def test_delete_conversation_removes_messages_chunks_and_vectors(tmp_path, monkeypatch):
+    client = build_client(tmp_path, monkeypatch)
+    client.post("/api/v1/sync/upload", json=upload_payload("conv1"), auth=auth())
+
+    response = client.post(
+        "/api/v1/sync/delete",
+        json={"assistantId": "assistant1", "conversationId": "conv1"},
+        auth=auth(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": 2}
+    search = client.post(
+        "/api/v1/recall/search",
+        json={"assistantId": "assistant1", "query": "kotlin", "role": "assistant", "limit": 10},
+        auth=auth(),
+    ).json()["results"]
+    assert search == []
+
+
+def test_diff_deletes_server_conversations_missing_locally(tmp_path, monkeypatch):
+    client = build_client(tmp_path, monkeypatch)
+    client.post("/api/v1/sync/upload", json=upload_payload("conv1"), auth=auth())
+
+    response = client.post(
+        "/api/v1/sync/diff",
+        json={"assistantId": "assistant1", "conversations": []},
+        auth=auth(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"dirty": [], "deleted": 2}
+    search = client.post(
+        "/api/v1/recall/search",
+        json={"assistantId": "assistant1", "query": "kotlin", "role": "assistant", "limit": 10},
+        auth=auth(),
+    ).json()["results"]
+    assert search == []
+
+
 def test_search_filters_role_focus_and_exclude_and_selected_only(tmp_path, monkeypatch):
     client = build_client(tmp_path, monkeypatch)
     client.post("/api/v1/sync/upload", json=upload_payload("conv1"), auth=auth())

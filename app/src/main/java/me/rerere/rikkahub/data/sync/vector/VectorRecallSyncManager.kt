@@ -46,11 +46,14 @@ class VectorRecallSyncManager(
 
     suspend fun syncAll(
         summaries: List<VectorRecallConversationSummary>,
+        assistantIds: Set<String> = summaries.map { it.assistantId }.toSet(),
         loadConversation: suspend (Uuid) -> Conversation?,
     ) = withContext(Dispatchers.IO) {
         if (!handshake()) return@withContext
         val config = settingsStore.settingsFlow.first().vectorRecallConfig
-        summaries.groupBy { it.assistantId }.forEach { (assistantId, assistantConversations) ->
+        val summariesByAssistant = summaries.groupBy { it.assistantId }
+        (assistantIds + summariesByAssistant.keys).forEach { assistantId ->
+            val assistantConversations = summariesByAssistant[assistantId].orEmpty()
             val dirty = runCatching {
                 client.diff(
                     config = config,
@@ -69,12 +72,11 @@ class VectorRecallSyncManager(
                 state.markFailed(error.message)
             }.getOrElse { emptyList() }
 
-            dirty.mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
-                .forEach { conversationId ->
-                    loadConversation(conversationId)?.let { conversation ->
-                        uploadConversation(conversation)
-                    }
+            for (conversationId in dirty.mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }) {
+                loadConversation(conversationId)?.let { conversation ->
+                    uploadConversation(conversation)
                 }
+            }
         }
     }
 
@@ -87,6 +89,24 @@ class VectorRecallSyncManager(
             client.upload(config, request)
         }.onFailure { error ->
             Log.w(TAG, "upload conversation failed: ${conversation.id}", error)
+            state.markFailed(error.message)
+        }
+    }
+
+    suspend fun deleteConversation(conversationId: Uuid, assistantId: Uuid) = withContext(Dispatchers.IO) {
+        val config = settingsStore.settingsFlow.first().vectorRecallConfig
+        if (!config.enabled || !client.isConfigured(config)) return@withContext
+        if (!state.handshakeOk && !handshake()) return@withContext
+        runCatching {
+            client.deleteConversation(
+                config = config,
+                request = VectorDeleteConversationRequest(
+                    assistantId = assistantId.toString(),
+                    conversationId = conversationId.toString(),
+                ),
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "delete remote conversation failed: $conversationId", error)
             state.markFailed(error.message)
         }
     }

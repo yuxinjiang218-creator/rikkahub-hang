@@ -30,6 +30,7 @@ data class VectorDiffRequest(
 @Serializable
 data class VectorDiffResponse(
     val dirty: List<String> = emptyList(),
+    val deleted: Int = 0,
 )
 
 @Serializable
@@ -61,6 +62,17 @@ data class VectorUploadMessageDto(
 @Serializable
 data class VectorUploadResponse(
     val synced: Int = 0,
+    val deleted: Int = 0,
+)
+
+@Serializable
+data class VectorDeleteConversationRequest(
+    val assistantId: String,
+    val conversationId: String,
+)
+
+@Serializable
+data class VectorDeleteConversationResponse(
     val deleted: Int = 0,
 )
 

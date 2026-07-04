@@ -47,6 +47,17 @@ class VectorRecallClient(
         )
     }
 
+    fun deleteConversation(
+        config: VectorRecallConfig,
+        request: VectorDeleteConversationRequest,
+    ): VectorDeleteConversationResponse {
+        return post(
+            config = config,
+            path = "/api/v1/sync/delete",
+            body = JsonInstant.encodeToString(request),
+        )
+    }
+
     fun search(config: VectorRecallConfig, request: VectorSearchRequest): VectorSearchResponse {
         return post(
             config = config,
@@ -68,7 +79,7 @@ class VectorRecallClient(
             .post(body.toRequestBody(VECTOR_JSON_MEDIA_TYPE))
             .build()
         client.newCall(request).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
+            val responseBody = response.body.string()
             if (!response.isSuccessful) {
                 throw IOException("Vector recall request failed: HTTP ${response.code}")
             }

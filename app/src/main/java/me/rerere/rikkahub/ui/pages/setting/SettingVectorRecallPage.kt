@@ -87,6 +87,7 @@ fun SettingVectorRecallPage(
         val summaries = conversationRepository.getVectorRecallConversationSummaries()
         vectorSyncManager.syncAll(
             summaries = summaries,
+            assistantIds = settings.assistants.map { it.id.toString() }.toSet(),
             loadConversation = { id: Uuid -> conversationRepository.getConversationById(id) },
         )
     }

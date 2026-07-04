@@ -6,6 +6,8 @@ from config import config
 from db import Database, MessageChunkRow, MessageRow, User
 from embedder import embedder
 from models import (
+    DeleteConversationRequest,
+    DeleteConversationResponse,
     DiffRequest,
     DiffResponse,
     HandshakeResponse,
@@ -32,11 +34,35 @@ def handshake(user: User = Depends(get_current_user)):
 @app.post("/api/v1/sync/diff", response_model=DiffResponse)
 def sync_diff(body: DiffRequest, user: User = Depends(get_current_user)):
     dirty = []
+    local_ids = {conv.conversationId for conv in body.conversations}
     for conv in body.conversations:
         server_update_at = db.get_conversation_update_at(conv.conversationId, user.id)
         if server_update_at is None or server_update_at < conv.updateAt:
             dirty.append(conv.conversationId)
-    return DiffResponse(dirty=dirty)
+
+    deleted = 0
+    try:
+        stale_conversations = db.get_conversation_ids_for_assistant(user.id, body.assistantId) - local_ids
+        for conversation_id in stale_conversations:
+            vector_db.delete_many(db.get_chunk_pks_for_conversation(conversation_id, user.id))
+            deleted += db.delete_conversation(conversation_id, user.id, body.assistantId)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return DiffResponse(dirty=dirty, deleted=deleted)
+
+
+@app.post("/api/v1/sync/delete", response_model=DeleteConversationResponse)
+def sync_delete(body: DeleteConversationRequest, user: User = Depends(get_current_user)):
+    try:
+        vector_db.delete_many(db.get_chunk_pks_for_conversation(body.conversationId, user.id))
+        deleted = db.delete_conversation(body.conversationId, user.id, body.assistantId)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return DeleteConversationResponse(deleted=deleted)
 
 
 @app.post("/api/v1/sync/upload", response_model=UploadResponse)

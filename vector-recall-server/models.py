@@ -19,6 +19,7 @@ class DiffRequest(BaseModel):
 
 class DiffResponse(BaseModel):
     dirty: list[str]
+    deleted: int = 0
 
 
 class UploadMessage(BaseModel):
@@ -46,6 +47,15 @@ class UploadRequest(BaseModel):
 
 class UploadResponse(BaseModel):
     synced: int
+    deleted: int
+
+
+class DeleteConversationRequest(BaseModel):
+    assistantId: str | None = None
+    conversationId: str
+
+
+class DeleteConversationResponse(BaseModel):
     deleted: int
 
 
