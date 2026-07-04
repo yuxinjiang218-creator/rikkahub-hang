@@ -1281,4 +1281,8 @@
   <string name="chat_page_folder_add">New</string>
   <string name="chat_page_delete_folder_confirm">Delete folder "%1$s"? Conversations inside will not be deleted, only removed from the folder.</string>
   <string name="chat_page_delete_folder_generating">Some conversations in this folder are still generating. Please stop them before deleting.</string>
+  <string name="setting_display_page_generation_retry_limit_disabled">Off</string>
+  <string name="setting_display_page_generation_retry_limit_unlimited">Unlimited</string>
+  <string name="generation_retry_status_limited">Retrying generation (%1$d/%2$d)...</string>
+  <string name="generation_retry_status_unlimited">Retrying generation (%1$d)...</string>
 </resources>

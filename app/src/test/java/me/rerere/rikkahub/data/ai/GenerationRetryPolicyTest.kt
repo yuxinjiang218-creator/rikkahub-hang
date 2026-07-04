@@ -13,10 +13,21 @@ import java.io.IOException
 
 class GenerationRetryPolicyTest {
     @Test
-    fun `retry limit is clamped`() {
-        assertEquals(0, normalizedGenerationRetryLimit(-1))
+    fun `retry limit keeps infinite sentinel and clamps finite values`() {
+        assertEquals(-1, normalizedGenerationRetryLimit(-1))
+        assertEquals(-1, normalizedGenerationRetryLimit(-99))
+        assertEquals(0, normalizedGenerationRetryLimit(0))
         assertEquals(3, normalizedGenerationRetryLimit(3))
         assertEquals(10, normalizedGenerationRetryLimit(99))
+    }
+
+    @Test
+    fun `retry limit controls retry attempts`() {
+        assertTrue(shouldAttemptGenerationRetry(attempt = 0, retryLimit = -1))
+        assertTrue(shouldAttemptGenerationRetry(attempt = 100, retryLimit = -1))
+        assertFalse(shouldAttemptGenerationRetry(attempt = 0, retryLimit = 0))
+        assertTrue(shouldAttemptGenerationRetry(attempt = 0, retryLimit = 1))
+        assertFalse(shouldAttemptGenerationRetry(attempt = 1, retryLimit = 1))
     }
 
     @Test
@@ -46,6 +57,16 @@ class GenerationRetryPolicyTest {
         assertTrue(isRetryableGenerationError(IOException("connection reset")))
         assertTrue(isRetryableGenerationError(Exception("provider is overloaded, try again")))
         assertTrue(isRetryableGenerationError(Exception("rate limit exceeded")))
+    }
+
+    @Test
+    fun `transport errors after stream starts are not retryable`() {
+        val tracker = GenerationAttemptTracker().apply {
+            beginAttempt(0)
+            recordStreamStarted()
+        }
+
+        assertFalse(isRetryableGenerationError(IOException("connection reset"), tracker))
     }
 
     @Test

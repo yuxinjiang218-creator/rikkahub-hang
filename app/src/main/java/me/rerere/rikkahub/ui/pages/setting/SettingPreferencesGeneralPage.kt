@@ -32,6 +32,7 @@ import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceBoolean
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
@@ -143,17 +144,25 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Slider(
-                                    value = displaySetting.generationRetryLimit.coerceIn(0, 10).toFloat(),
+                                    value = displaySetting.generationRetryLimit.coerceIn(-1, 10).toFloat(),
                                     onValueChange = {
                                         updateDisplaySetting(
-                                            displaySetting.copy(generationRetryLimit = it.toInt().coerceIn(0, 10))
+                                            displaySetting.copy(
+                                                generationRetryLimit = it.roundToInt().coerceIn(-1, 10)
+                                            )
                                         )
                                     },
-                                    valueRange = 0f..10f,
-                                    steps = 9,
+                                    valueRange = -1f..10f,
+                                    steps = 10,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Text(text = "${displaySetting.generationRetryLimit.coerceIn(0, 10)}")
+                                Text(
+                                    text = when (val retryLimit = displaySetting.generationRetryLimit.coerceIn(-1, 10)) {
+                                        -1 -> stringResource(R.string.setting_display_page_generation_retry_limit_unlimited)
+                                        0 -> stringResource(R.string.setting_display_page_generation_retry_limit_disabled)
+                                        else -> "$retryLimit/10"
+                                    }
+                                )
                             }
                         },
                     )

@@ -24,6 +24,7 @@ import java.io.File
 import kotlin.time.Duration.Companion.days
 
 private const val TAG = "OcrTransformer"
+private const val OCR_PROCESSING_STATUS = "正在识别图片..."
 
 object OcrTransformer : InputMessageTransformer, KoinComponent {
     private val cache by lazy {
@@ -58,8 +59,9 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         if (!hasImages) return messages
 
         return withContext(Dispatchers.IO) {
+            val previousStatus = ctx.processingStatus.value
             try {
-                ctx.processingStatus.value = "正在识别图片..."
+                ctx.processingStatus.value = OCR_PROCESSING_STATUS
                 messages.map { message ->
                     message.copy(
                         parts = message.parts.map { part ->
@@ -74,7 +76,9 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                     )
                 }
             } finally {
-                ctx.processingStatus.value = null
+                if (ctx.processingStatus.value == OCR_PROCESSING_STATUS) {
+                    ctx.processingStatus.value = previousStatus
+                }
             }
         }
     }

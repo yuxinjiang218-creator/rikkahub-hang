@@ -721,6 +721,8 @@ class ChatService(
                     }
                 },
             ).onCompletion {
+                session.processingStatus.value = null
+
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)
 

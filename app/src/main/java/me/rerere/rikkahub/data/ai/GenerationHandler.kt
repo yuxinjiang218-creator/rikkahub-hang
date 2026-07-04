@@ -32,6 +32,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -70,7 +71,10 @@ sealed interface GenerationChunk {
 }
 
 internal fun normalizedGenerationRetryLimit(limit: Int): Int =
-    limit.coerceIn(0, 10)
+    limit.coerceIn(-1, 10)
+
+internal fun shouldAttemptGenerationRetry(attempt: Int, retryLimit: Int): Boolean =
+    retryLimit < 0 || attempt < retryLimit
 
 internal fun extractHttpStatusFromGenerationError(error: Throwable): Int? {
     val text = generateSequence(error) { it.cause }
@@ -104,7 +108,7 @@ internal fun isRetryableGenerationError(
         error is UnknownHostException ||
         error is IOException
     ) {
-        return true
+        return !tracker.streamStarted
     }
 
     val text = generateSequence(error) { it.cause }
@@ -574,7 +578,7 @@ class GenerationHandler(
                 if (error is CancellationException) throw error
                 tracker.recordHttpStatus(tracker.httpStatus ?: extractHttpStatusFromGenerationError(error))
                 val shouldRetry = !producedContent &&
-                    attempt < retryLimit &&
+                    shouldAttemptGenerationRetry(attempt, retryLimit) &&
                     isRetryableGenerationError(error, tracker)
                 if (!shouldRetry) {
                     throw error
@@ -584,7 +588,11 @@ class GenerationHandler(
                     TAG,
                     "generateInternal: retry attempt $attempt/$retryLimit after ${error.javaClass.simpleName}: ${error.message}"
                 )
-                processingStatus.value = "Retrying generation ($attempt/$retryLimit)..."
+                processingStatus.value = if (retryLimit < 0) {
+                    context.getString(R.string.generation_retry_status_unlimited, attempt)
+                } else {
+                    context.getString(R.string.generation_retry_status_limited, attempt, retryLimit)
+                }
             }
         }
     }

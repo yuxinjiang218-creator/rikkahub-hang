@@ -1281,4 +1281,8 @@
   <string name="chat_page_delete_folder_generating">此資料夾中的部分對話仍在生成中。請先停止它們再刪除。</string>
   <string name="safe_mode_enter_app">進入應用程式</string>
   <string name="setting_display_page_generation_retry_limit_title">生成重試次數</string>
+  <string name="setting_display_page_generation_retry_limit_disabled">關閉</string>
+  <string name="setting_display_page_generation_retry_limit_unlimited">無限</string>
+  <string name="generation_retry_status_limited">正在重試生成（%1$d/%2$d）...</string>
+  <string name="generation_retry_status_unlimited">正在重試生成（%1$d）...</string>
 </resources>
