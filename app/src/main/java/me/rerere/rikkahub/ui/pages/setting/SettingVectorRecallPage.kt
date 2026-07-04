@@ -35,8 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -48,6 +49,7 @@ import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.View
 import me.rerere.hugeicons.stroke.ViewOff
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.VectorRecallConfig
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.sync.vector.VectorRecallState
@@ -78,6 +80,8 @@ fun SettingVectorRecallPage(
     val toaster = LocalToaster.current
     val config = settings.vectorRecallConfig
     val serverUrlError = config.serverUrl.isNotBlank() && config.serverUrl.toHttpUrlOrNull() == null
+    val connectedToast = stringResource(R.string.setting_vector_recall_connected_toast)
+    val failedToast = stringResource(R.string.setting_vector_recall_failed_toast)
 
     suspend fun syncAll() {
         val summaries = conversationRepository.getVectorRecallConversationSummaries()
@@ -102,7 +106,7 @@ fun SettingVectorRecallPage(
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text("Vector Recall") },
+                title = { Text(stringResource(R.string.setting_vector_recall_title)) },
                 navigationIcon = { BackButton() },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
@@ -140,9 +144,12 @@ fun SettingVectorRecallPage(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                Text("Enable vector recall server", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "Remote semantic search for chat history",
+                                    stringResource(R.string.setting_vector_recall_enable),
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                                Text(
+                                    stringResource(R.string.setting_vector_recall_enable_desc),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -156,12 +163,12 @@ fun SettingVectorRecallPage(
                         OutlinedTextField(
                             value = config.serverUrl,
                             onValueChange = { save(config.copy(serverUrl = it.trim())) },
-                            label = { Text("Server URL") },
+                            label = { Text(stringResource(R.string.setting_vector_recall_server_url)) },
                             singleLine = true,
                             isError = serverUrlError,
                             supportingText = {
                                 if (serverUrlError) {
-                                    Text("Enter a valid http or https URL")
+                                    Text(stringResource(R.string.setting_vector_recall_invalid_url))
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -170,7 +177,7 @@ fun SettingVectorRecallPage(
                         OutlinedTextField(
                             value = config.username,
                             onValueChange = { save(config.copy(username = it.trim())) },
-                            label = { Text("Username") },
+                            label = { Text(stringResource(R.string.setting_vector_recall_username)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -198,7 +205,7 @@ fun SettingVectorRecallPage(
                                             vectorSyncManager.handshake()
                                         }
                                         toaster.show(
-                                            message = if (ok) "Vector recall server connected" else "Vector recall connection failed",
+                                            message = if (ok) connectedToast else failedToast,
                                             type = if (ok) ToastType.Success else ToastType.Error,
                                         )
                                     }
@@ -210,7 +217,7 @@ fun SettingVectorRecallPage(
                                         strokeWidth = 2.dp,
                                     )
                                 } else {
-                                    Text("Test connection")
+                                    Text(stringResource(R.string.setting_vector_recall_test_connection))
                                 }
                             }
                         }
@@ -230,7 +237,7 @@ private fun PasswordField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text("Password") },
+        label = { Text(stringResource(R.string.setting_vector_recall_password)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -258,10 +265,10 @@ private fun ConnectionStatusIndicator(
         else -> MaterialTheme.colorScheme.error
     }
     val text = when {
-        checking -> "Checking"
-        ok -> "Connected"
-        error.isNullOrBlank() -> "Not connected"
-        else -> "Failed"
+        checking -> stringResource(R.string.setting_vector_recall_status_checking)
+        ok -> stringResource(R.string.setting_vector_recall_status_connected)
+        error.isNullOrBlank() -> stringResource(R.string.setting_vector_recall_status_not_connected)
+        else -> stringResource(R.string.setting_vector_recall_status_failed)
     }
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),

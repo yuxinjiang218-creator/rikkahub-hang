@@ -1281,4 +1281,19 @@
   <string name="chat_page_delete_folder_generating">此資料夾中的部分對話仍在生成中。請先停止它們再刪除。</string>
   <string name="safe_mode_enter_app">進入應用程式</string>
   <string name="setting_display_page_generation_retry_limit_title">生成重試次數</string>
+  <string name="setting_vector_recall_title">向量召回</string>
+  <string name="setting_vector_recall_desc">用於聊天記錄的遠端語意召回</string>
+  <string name="setting_vector_recall_enable">啟用向量召回伺服器</string>
+  <string name="setting_vector_recall_enable_desc">使用遠端伺服器提升聊天記錄的語意召回效果</string>
+  <string name="setting_vector_recall_server_url">伺服器地址</string>
+  <string name="setting_vector_recall_invalid_url">請輸入有效的 http 或 https 地址</string>
+  <string name="setting_vector_recall_username">使用者名稱</string>
+  <string name="setting_vector_recall_password">密碼</string>
+  <string name="setting_vector_recall_test_connection">測試連線</string>
+  <string name="setting_vector_recall_connected_toast">向量召回伺服器連線成功</string>
+  <string name="setting_vector_recall_failed_toast">向量召回連線失敗</string>
+  <string name="setting_vector_recall_status_checking">檢查中</string>
+  <string name="setting_vector_recall_status_connected">已連線</string>
+  <string name="setting_vector_recall_status_not_connected">未連線</string>
+  <string name="setting_vector_recall_status_failed">連線失敗</string>
 </resources>

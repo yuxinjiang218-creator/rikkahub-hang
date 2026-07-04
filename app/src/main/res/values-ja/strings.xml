@@ -1283,4 +1283,19 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="chat_page_delete_folder_generating">フォルダ内の一部の会話がまだ生成中です。削除する前にそれらを停止してください。</string>
   <string name="safe_mode_enter_app">アプリに入る</string>
   <string name="setting_display_page_generation_retry_limit_title">生成の再試行回数</string>
+  <string name="setting_vector_recall_title">ベクトル検索</string>
+  <string name="setting_vector_recall_desc">チャット履歴向けのリモート意味検索</string>
+  <string name="setting_vector_recall_enable">ベクトル検索サーバーを有効化</string>
+  <string name="setting_vector_recall_enable_desc">リモートサーバーでチャット履歴の意味検索精度を高めます</string>
+  <string name="setting_vector_recall_server_url">サーバー URL</string>
+  <string name="setting_vector_recall_invalid_url">有効な http または https URL を入力してください</string>
+  <string name="setting_vector_recall_username">ユーザー名</string>
+  <string name="setting_vector_recall_password">パスワード</string>
+  <string name="setting_vector_recall_test_connection">接続をテスト</string>
+  <string name="setting_vector_recall_connected_toast">ベクトル検索サーバーに接続しました</string>
+  <string name="setting_vector_recall_failed_toast">ベクトル検索の接続に失敗しました</string>
+  <string name="setting_vector_recall_status_checking">確認中</string>
+  <string name="setting_vector_recall_status_connected">接続済み</string>
+  <string name="setting_vector_recall_status_not_connected">未接続</string>
+  <string name="setting_vector_recall_status_failed">失敗</string>
 </resources>

@@ -1283,4 +1283,19 @@
   <string name="chat_page_delete_folder_generating">Некоторые беседы в этой папке все еще генерируются. Пожалуйста, остановите их перед удалением.</string>
   <string name="safe_mode_enter_app">Войти в приложение</string>
   <string name="setting_display_page_generation_retry_limit_title">Количество повторов генерации</string>
+  <string name="setting_vector_recall_title">Векторный поиск</string>
+  <string name="setting_vector_recall_desc">Удаленный семантический поиск по истории чатов</string>
+  <string name="setting_vector_recall_enable">Включить сервер векторного поиска</string>
+  <string name="setting_vector_recall_enable_desc">Использовать удаленный сервер для улучшения семантического поиска по истории чатов</string>
+  <string name="setting_vector_recall_server_url">URL сервера</string>
+  <string name="setting_vector_recall_invalid_url">Введите корректный http или https URL</string>
+  <string name="setting_vector_recall_username">Имя пользователя</string>
+  <string name="setting_vector_recall_password">Пароль</string>
+  <string name="setting_vector_recall_test_connection">Проверить подключение</string>
+  <string name="setting_vector_recall_connected_toast">Сервер векторного поиска подключен</string>
+  <string name="setting_vector_recall_failed_toast">Не удалось подключиться к векторному поиску</string>
+  <string name="setting_vector_recall_status_checking">Проверка</string>
+  <string name="setting_vector_recall_status_connected">Подключено</string>
+  <string name="setting_vector_recall_status_not_connected">Не подключено</string>
+  <string name="setting_vector_recall_status_failed">Ошибка</string>
 </resources>

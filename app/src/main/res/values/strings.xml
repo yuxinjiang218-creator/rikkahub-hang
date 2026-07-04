@@ -1281,4 +1281,19 @@
   <string name="chat_page_folder_add">New</string>
   <string name="chat_page_delete_folder_confirm">Delete folder "%1$s"? Conversations inside will not be deleted, only removed from the folder.</string>
   <string name="chat_page_delete_folder_generating">Some conversations in this folder are still generating. Please stop them before deleting.</string>
+  <string name="setting_vector_recall_title">Vector Recall</string>
+  <string name="setting_vector_recall_desc">Remote semantic recall for chat history</string>
+  <string name="setting_vector_recall_enable">Enable vector recall server</string>
+  <string name="setting_vector_recall_enable_desc">Use a remote server to improve semantic recall for chat history</string>
+  <string name="setting_vector_recall_server_url">Server URL</string>
+  <string name="setting_vector_recall_invalid_url">Enter a valid http or https URL</string>
+  <string name="setting_vector_recall_username">Username</string>
+  <string name="setting_vector_recall_password">Password</string>
+  <string name="setting_vector_recall_test_connection">Test connection</string>
+  <string name="setting_vector_recall_connected_toast">Vector recall server connected</string>
+  <string name="setting_vector_recall_failed_toast">Vector recall connection failed</string>
+  <string name="setting_vector_recall_status_checking">Checking</string>
+  <string name="setting_vector_recall_status_connected">Connected</string>
+  <string name="setting_vector_recall_status_not_connected">Not connected</string>
+  <string name="setting_vector_recall_status_failed">Failed</string>
 </resources>
