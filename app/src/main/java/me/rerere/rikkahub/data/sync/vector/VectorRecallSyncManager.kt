@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.sync.vector
 
 import android.util.Log
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -8,6 +9,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
+import me.rerere.rikkahub.data.datastore.VectorRecallConfig
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.model.Conversation
@@ -28,8 +30,8 @@ class VectorRecallSyncManager(
     private val state: VectorRecallState,
 ) {
     suspend fun handshake(): Boolean = withContext(Dispatchers.IO) {
-        val config = settingsStore.settingsFlow.first().vectorRecallConfig
-        if (!config.enabled || !client.isConfigured(config)) {
+        val config = ensureAuthenticatedConfig()
+        if (config == null) {
             state.markFailed()
             return@withContext false
         }
@@ -40,6 +42,7 @@ class VectorRecallSyncManager(
             state.markOk()
         }.onFailure { error ->
             Log.w(TAG, "handshake failed", error)
+            clearTokenIfUnauthorized(error)
             state.markFailed(error.message)
         }.isSuccess
     }
@@ -81,21 +84,20 @@ class VectorRecallSyncManager(
     }
 
     suspend fun uploadConversation(conversation: Conversation) = withContext(Dispatchers.IO) {
-        val config = settingsStore.settingsFlow.first().vectorRecallConfig
-        if (!config.enabled || !client.isConfigured(config)) return@withContext
+        val config = ensureAuthenticatedConfig() ?: return@withContext
         if (!state.handshakeOk && !handshake()) return@withContext
         val request = conversation.toVectorUploadRequest()
         runCatching {
             client.upload(config, request)
         }.onFailure { error ->
             Log.w(TAG, "upload conversation failed: ${conversation.id}", error)
+            clearTokenIfUnauthorized(error)
             state.markFailed(error.message)
         }
     }
 
     suspend fun deleteConversation(conversationId: Uuid, assistantId: Uuid) = withContext(Dispatchers.IO) {
-        val config = settingsStore.settingsFlow.first().vectorRecallConfig
-        if (!config.enabled || !client.isConfigured(config)) return@withContext
+        val config = ensureAuthenticatedConfig() ?: return@withContext
         if (!state.handshakeOk && !handshake()) return@withContext
         runCatching {
             client.deleteConversation(
@@ -107,6 +109,7 @@ class VectorRecallSyncManager(
             )
         }.onFailure { error ->
             Log.w(TAG, "delete remote conversation failed: $conversationId", error)
+            clearTokenIfUnauthorized(error)
             state.markFailed(error.message)
         }
     }
@@ -119,11 +122,16 @@ class VectorRecallSyncManager(
         role: MessageRole?,
         limit: Int,
     ): VectorRecallSearchOutcome = withContext(Dispatchers.IO) {
-        val config = settingsStore.settingsFlow.first().vectorRecallConfig
-        if (!config.enabled) {
-            return@withContext VectorRecallSearchOutcome(emptyList(), remoteAvailable = false, degraded = false)
+        val config = ensureAuthenticatedConfig()
+        if (config == null) {
+            val enabled = settingsStore.settingsFlow.first().vectorRecallConfig.enabled
+            return@withContext VectorRecallSearchOutcome(
+                emptyList(),
+                remoteAvailable = false,
+                degraded = enabled,
+            )
         }
-        if (!client.isConfigured(config) || !state.handshakeOk) {
+        if (!state.handshakeOk && !handshake()) {
             return@withContext VectorRecallSearchOutcome(emptyList(), remoteAvailable = false, degraded = true)
         }
         runCatching {
@@ -144,11 +152,71 @@ class VectorRecallSyncManager(
             },
             onFailure = { error ->
                 Log.w(TAG, "vector search failed", error)
+                clearTokenIfUnauthorized(error)
                 state.markFailed(error.message)
                 VectorRecallSearchOutcome(emptyList(), remoteAvailable = false, degraded = true)
             }
         )
     }
+
+    private suspend fun ensureAuthenticatedConfig(): VectorRecallConfig? {
+        val config = settingsStore.settingsFlow.first().vectorRecallConfig
+        if (!config.enabled || !client.isConfigured(config)) return null
+        if (config.deviceToken.isNotBlank()) return config
+        if (config.password.isBlank()) return null
+
+        val login = runCatching {
+            client.login(
+                config = config,
+                request = VectorLoginRequest(
+                    username = config.username,
+                    password = config.password,
+                    deviceName = deviceName(),
+                ),
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "vector login failed", error)
+            state.markFailed(error.message)
+        }.getOrNull() ?: return null
+
+        val authenticatedConfig = config.copy(
+            deviceToken = login.deviceToken,
+            tokenPrefix = login.tokenPrefix,
+        )
+        settingsStore.update { settings ->
+            val current = settings.vectorRecallConfig
+            if (
+                current.serverUrl == config.serverUrl &&
+                current.username == config.username &&
+                current.password == config.password
+            ) {
+                settings.copy(vectorRecallConfig = authenticatedConfig)
+            } else {
+                settings
+            }
+        }
+        return authenticatedConfig
+    }
+
+    private suspend fun clearTokenIfUnauthorized(error: Throwable) {
+        if (error is VectorRecallHttpException && error.code == 401) {
+            settingsStore.update { settings ->
+                settings.copy(
+                    vectorRecallConfig = settings.vectorRecallConfig.copy(
+                        deviceToken = "",
+                        tokenPrefix = "",
+                    )
+                )
+            }
+            state.markFailed(error.message)
+        }
+    }
+
+    private fun deviceName(): String =
+        listOf(Build.MANUFACTURER, Build.MODEL)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .ifBlank { "RikkaHub Android" }
 }
 
 internal fun Conversation.toVectorUploadRequest(): VectorUploadRequest =

@@ -1,6 +1,18 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from starlette.responses import PlainTextResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from auth import configure_auth, get_current_user
+from auth import (
+    clear_login_failures,
+    client_ip,
+    configure_auth,
+    ensure_login_allowed,
+    get_current_user,
+    issue_device_token,
+    register_login_failure,
+    token_prefix,
+    verify_password,
+)
 from chunker import TextChunk, chunk_text
 from config import config
 from db import Database, MessageChunkRow, MessageRow, User
@@ -11,6 +23,8 @@ from models import (
     DiffRequest,
     DiffResponse,
     HandshakeResponse,
+    LoginRequest,
+    LoginResponse,
     RecallRequest,
     RecallResponse,
     RecallResult,
@@ -19,11 +33,81 @@ from models import (
 )
 from vector_db import VectorDatabase
 
+
+class RequestSizeLimitMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        limit = config.upload_max_bytes if path == "/api/v1/sync/upload" else config.request_max_bytes
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        content_length = headers.get(b"content-length")
+        if content_length and int(content_length) > limit:
+            response = PlainTextResponse("Request body too large", status_code=413)
+            await response(scope, receive, send)
+            return
+        body = bytearray()
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] == "http.request":
+                body.extend(message.get("body", b""))
+                if len(body) > limit:
+                    response = PlainTextResponse("Request body too large", status_code=413)
+                    await response(scope, receive, send)
+                    return
+                more_body = message.get("more_body", False)
+            else:
+                await self.app(scope, receive, send)
+                return
+
+        sent = False
+
+        async def replay_receive():
+            nonlocal sent
+            if sent:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            sent = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        await self.app(scope, replay_receive, send)
+
+
+if (
+    config.vector_username == "admin"
+    and config.vector_password == "admin"
+    and not config.allow_insecure_defaults
+):
+    raise RuntimeError("Refusing to start with default admin/admin credentials")
+
 app = FastAPI(title="RikkaHub Vector Recall")
+app.add_middleware(RequestSizeLimitMiddleware)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(config.allowed_hosts))
 db = Database(config.db_path)
 db.ensure_user(config.vector_username, config.vector_password)
 configure_auth(db)
 vector_db = VectorDatabase(db.conn, config.embed_dimension)
+
+
+@app.post("/api/v1/auth/login", response_model=LoginResponse)
+def login(body: LoginRequest, request: Request):
+    ip = client_ip(request)
+    ensure_login_allowed(ip, body.username)
+    user = verify_password(body.username, body.password)
+    if not user:
+        register_login_failure(ip, body.username)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    clear_login_failures(ip, body.username)
+    device_token, device = issue_device_token(user, body.deviceName)
+    return LoginResponse(
+        deviceToken=device_token,
+        tokenPrefix=token_prefix(device_token),
+        createdAt=device.created_at,
+    )
 
 
 @app.post("/api/v1/handshake", response_model=HandshakeResponse)

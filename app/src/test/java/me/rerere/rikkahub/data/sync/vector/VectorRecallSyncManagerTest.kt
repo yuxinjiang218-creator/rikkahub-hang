@@ -4,10 +4,17 @@ import kotlinx.datetime.LocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.datastore.VectorRecallConfig
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -121,5 +128,70 @@ class VectorRecallSyncManagerTest {
 
         assertEquals(listOf("conversation"), response.dirty)
         assertEquals(2, response.deleted)
+    }
+
+    @Test
+    fun `VectorRecallConfig decodes old config without device token`() {
+        val config = JsonInstant.decodeFromString<VectorRecallConfig>(
+            """
+            {
+              "enabled": true,
+              "serverUrl": "https://example.com",
+              "username": "boss",
+              "password": "secret"
+            }
+            """.trimIndent()
+        )
+
+        assertEquals("", config.deviceToken)
+        assertEquals("", config.tokenPrefix)
+    }
+
+    @Test
+    fun `VectorLoginResponse decodes device token`() {
+        val response = JsonInstant.decodeFromString<VectorLoginResponse>(
+            """{"deviceToken":"rvk_token","tokenPrefix":"rvk_token","createdAt":1234}"""
+        )
+
+        assertEquals("rvk_token", response.deviceToken)
+        assertEquals("rvk_token", response.tokenPrefix)
+        assertEquals(1234, response.createdAt)
+    }
+
+    @Test
+    fun `VectorRecallClient login sends no auth and handshake sends bearer token`() {
+        val authHeaders = mutableListOf<String?>()
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                authHeaders += chain.request().header("Authorization")
+                val body = when (chain.request().url.encodedPath) {
+                    "/api/v1/auth/login" -> """{"deviceToken":"rvk_login","tokenPrefix":"rvk_login","createdAt":1}"""
+                    else -> """{"status":"ok","version":"1.0","username":"boss"}"""
+                }
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(body.toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val client = VectorRecallClient(httpClient)
+        val config = VectorRecallConfig(
+            serverUrl = "https://example.com",
+            username = "boss",
+            password = "secret",
+            deviceToken = "rvk_device",
+        )
+
+        client.login(
+            config,
+            VectorLoginRequest(username = "boss", password = "secret", deviceName = "phone")
+        )
+        client.handshake(config)
+
+        assertNull(authHeaders[0])
+        assertEquals("Bearer rvk_device", authHeaders[1])
     }
 }

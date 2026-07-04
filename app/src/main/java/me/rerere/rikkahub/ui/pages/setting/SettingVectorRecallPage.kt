@@ -101,7 +101,18 @@ fun SettingVectorRecallPage(
     }
 
     fun save(newConfig: VectorRecallConfig) {
-        vm.updateSettings(settings.copy(vectorRecallConfig = newConfig))
+        val credentialsChanged = newConfig.serverUrl != config.serverUrl ||
+            newConfig.username != config.username ||
+            newConfig.password != config.password
+        vm.updateSettings(
+            settings.copy(
+                vectorRecallConfig = if (credentialsChanged) {
+                    newConfig.copy(deviceToken = "", tokenPrefix = "")
+                } else {
+                    newConfig
+                }
+            )
+        )
     }
 
     Scaffold(

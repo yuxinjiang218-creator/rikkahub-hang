@@ -8,4 +8,6 @@ data class VectorRecallConfig(
     val serverUrl: String = "",
     val username: String = "",
     val password: String = "",
+    val deviceToken: String = "",
+    val tokenPrefix: String = "",
 )

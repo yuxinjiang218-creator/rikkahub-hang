@@ -16,6 +16,20 @@ data class VectorHandshakeResponse(
 )
 
 @Serializable
+data class VectorLoginRequest(
+    val username: String,
+    val password: String,
+    val deviceName: String,
+)
+
+@Serializable
+data class VectorLoginResponse(
+    val deviceToken: String,
+    val tokenPrefix: String,
+    val createdAt: Long,
+)
+
+@Serializable
 data class VectorDiffConversationDto(
     val conversationId: String,
     val updateAt: Long,

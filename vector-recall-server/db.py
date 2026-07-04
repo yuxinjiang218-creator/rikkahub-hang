@@ -16,6 +16,18 @@ class User:
 
 
 @dataclass
+class DeviceToken:
+    id: str
+    user_id: str
+    token_hash: str
+    token_prefix: str
+    device_name: str
+    created_at: int
+    last_used_at: int | None
+    revoked_at: int | None
+
+
+@dataclass
 class MessageRow:
     conversation_id: str
     node_id: str
@@ -107,6 +119,21 @@ class Database:
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_pk, user_id);
             CREATE INDEX IF NOT EXISTS idx_chunks_search ON message_chunks(user_id, assistant_id, is_selected, role);
+
+            CREATE TABLE IF NOT EXISTS device_tokens (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                token_hash TEXT NOT NULL,
+                token_prefix TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                last_used_at INTEGER,
+                revoked_at INTEGER,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_device_tokens_hash ON device_tokens(token_hash);
+            CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id, revoked_at);
+            CREATE INDEX IF NOT EXISTS idx_device_tokens_prefix ON device_tokens(token_prefix);
             """
         )
         self.conn.commit()
@@ -137,6 +164,100 @@ class Database:
         if not row:
             return None
         return User(id=row["id"], username=row["username"], password_hash=row["password_hash"])
+
+    def get_user_by_id(self, user_id: str) -> User | None:
+        row = self.conn.execute(
+            "SELECT id, username, password_hash FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return User(id=row["id"], username=row["username"], password_hash=row["password_hash"])
+
+    def create_device_token(
+        self,
+        user_id: str,
+        token_hash: str,
+        token_prefix: str,
+        device_name: str,
+        created_at: int,
+    ) -> DeviceToken:
+        token_id = str(uuid.uuid4())
+        self.conn.execute(
+            """
+            INSERT INTO device_tokens(
+                id, user_id, token_hash, token_prefix, device_name, created_at, last_used_at, revoked_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+            """,
+            (token_id, user_id, token_hash, token_prefix, device_name, created_at),
+        )
+        self.conn.commit()
+        return DeviceToken(
+            id=token_id,
+            user_id=user_id,
+            token_hash=token_hash,
+            token_prefix=token_prefix,
+            device_name=device_name,
+            created_at=created_at,
+            last_used_at=None,
+            revoked_at=None,
+        )
+
+    def get_active_device_token_by_hash(self, token_hash: str) -> DeviceToken | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM device_tokens
+            WHERE token_hash = ? AND revoked_at IS NULL
+            """,
+            (token_hash,),
+        ).fetchone()
+        return self._device_token_from_row(row) if row else None
+
+    def touch_device_token(self, token_id: str, timestamp: int) -> None:
+        self.conn.execute(
+            "UPDATE device_tokens SET last_used_at = ? WHERE id = ?",
+            (timestamp, token_id),
+        )
+        self.conn.commit()
+
+    def list_device_tokens(self, username: str) -> list[DeviceToken]:
+        rows = self.conn.execute(
+            """
+            SELECT dt.*
+            FROM device_tokens dt
+            JOIN users u ON u.id = dt.user_id
+            WHERE u.username = ?
+            ORDER BY dt.created_at DESC
+            """,
+            (username,),
+        ).fetchall()
+        return [self._device_token_from_row(row) for row in rows]
+
+    def revoke_device_token(self, token_prefix: str, revoked_at: int) -> int:
+        cursor = self.conn.execute(
+            """
+            UPDATE device_tokens
+            SET revoked_at = ?
+            WHERE token_prefix = ? AND revoked_at IS NULL
+            """,
+            (revoked_at, token_prefix),
+        )
+        self.conn.commit()
+        return cursor.rowcount
+
+    def revoke_all_device_tokens(self, username: str, revoked_at: int) -> int:
+        cursor = self.conn.execute(
+            """
+            UPDATE device_tokens
+            SET revoked_at = ?
+            WHERE revoked_at IS NULL
+              AND user_id IN (SELECT id FROM users WHERE username = ?)
+            """,
+            (revoked_at, username),
+        )
+        self.conn.commit()
+        return cursor.rowcount
 
     def get_conversation_update_at(self, conversation_id: str, user_id: str) -> int | None:
         row = self.conn.execute(
@@ -383,4 +504,17 @@ class Database:
             message_id=row["message_id"],
             role=row["role"],
             is_selected=row["is_selected"],
+        )
+
+    @staticmethod
+    def _device_token_from_row(row: sqlite3.Row) -> DeviceToken:
+        return DeviceToken(
+            id=row["id"],
+            user_id=row["user_id"],
+            token_hash=row["token_hash"],
+            token_prefix=row["token_prefix"],
+            device_name=row["device_name"],
+            created_at=row["created_at"],
+            last_used_at=row["last_used_at"],
+            revoked_at=row["revoked_at"],
         )

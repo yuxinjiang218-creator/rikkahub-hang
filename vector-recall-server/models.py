@@ -7,6 +7,18 @@ class HandshakeResponse(BaseModel):
     username: str
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    deviceName: str = "RikkaHub"
+
+
+class LoginResponse(BaseModel):
+    deviceToken: str
+    tokenPrefix: str
+    createdAt: int
+
+
 class DiffConversation(BaseModel):
     conversationId: str
     updateAt: int
