@@ -76,6 +76,17 @@ internal fun normalizedGenerationRetryLimit(limit: Int): Int =
 internal fun shouldAttemptGenerationRetry(attempt: Int, retryLimit: Int): Boolean =
     retryLimit < 0 || attempt < retryLimit
 
+internal fun clearOwnedProcessingStatus(
+    processingStatus: MutableStateFlow<String?>,
+    ownedStatus: String?,
+): String? {
+    if (ownedStatus != null && processingStatus.value == ownedStatus) {
+        processingStatus.value = null
+        return null
+    }
+    return ownedStatus
+}
+
 internal fun extractHttpStatusFromGenerationError(error: Throwable): Int? {
     val text = generateSequence(error) { it.cause }
         .joinToString(" ") { throwable ->
@@ -509,6 +520,7 @@ class GenerationHandler(
         val baseMessages = messages
         val retryLimit = normalizedGenerationRetryLimit(settings.displaySetting.generationRetryLimit)
         val tracker = GenerationAttemptTracker()
+        var activeRetryStatus: String? = null
         var attempt = 0
         while (true) {
             tracker.beginAttempt(attempt)
@@ -539,6 +551,7 @@ class GenerationHandler(
                         params = params
                     ).collect {
                         tracker.recordStreamStarted()
+                        activeRetryStatus = clearOwnedProcessingStatus(processingStatus, activeRetryStatus)
                         messages = messages.handleMessageChunk(chunk = it, model = model)
                         producedContent = producedContent || hasGeneratedAssistantContent(messages)
                         it.usage?.let { usage ->
@@ -560,6 +573,7 @@ class GenerationHandler(
                     )
                     messages = messages.handleMessageChunk(chunk = chunk, model = model)
                     producedContent = producedContent || hasGeneratedAssistantContent(messages)
+                    activeRetryStatus = clearOwnedProcessingStatus(processingStatus, activeRetryStatus)
                     chunk.usage?.let { usage ->
                         messages = messages.mapIndexed { index, message ->
                             if (index == messages.lastIndex) {
@@ -573,6 +587,7 @@ class GenerationHandler(
                     }
                     onUpdateMessages(messages)
                 }
+                activeRetryStatus = clearOwnedProcessingStatus(processingStatus, activeRetryStatus)
                 return
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
@@ -588,11 +603,12 @@ class GenerationHandler(
                     TAG,
                     "generateInternal: retry attempt $attempt/$retryLimit after ${error.javaClass.simpleName}: ${error.message}"
                 )
-                processingStatus.value = if (retryLimit < 0) {
+                activeRetryStatus = if (retryLimit < 0) {
                     context.getString(R.string.generation_retry_status_unlimited, attempt)
                 } else {
                     context.getString(R.string.generation_retry_status_limited, attempt, retryLimit)
                 }
+                processingStatus.value = activeRetryStatus
             }
         }
     }

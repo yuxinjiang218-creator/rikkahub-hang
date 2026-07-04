@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.GenerationAttemptTracker
 import me.rerere.ai.ui.UIMessage
@@ -28,6 +29,18 @@ class GenerationRetryPolicyTest {
         assertFalse(shouldAttemptGenerationRetry(attempt = 0, retryLimit = 0))
         assertTrue(shouldAttemptGenerationRetry(attempt = 0, retryLimit = 1))
         assertFalse(shouldAttemptGenerationRetry(attempt = 1, retryLimit = 1))
+    }
+
+    @Test
+    fun `owned retry status is cleared without touching newer processing status`() {
+        val status = MutableStateFlow<String?>("retry 1")
+
+        assertEquals(null, clearOwnedProcessingStatus(status, "retry 1"))
+        assertEquals(null, status.value)
+
+        status.value = "ocr"
+        assertEquals("retry 2", clearOwnedProcessingStatus(status, "retry 2"))
+        assertEquals("ocr", status.value)
     }
 
     @Test
