@@ -3,7 +3,6 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.Delete01
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -231,12 +230,6 @@ private fun AssistantMemoryContent(
                 }
             )
             item(
-                onClick = onOpenVectorRecall,
-                leadingContent = { Icon(HugeIcons.Database02, null) },
-                headlineContent = { Text(stringResource(R.string.setting_vector_recall_title)) },
-                supportingContent = { Text(stringResource(R.string.setting_vector_recall_desc)) },
-            )
-            item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_preserve_recent_chats_context)) },
                 supportingContent = {
                     Text(
@@ -260,6 +253,11 @@ private fun AssistantMemoryContent(
                         enabled = assistant.enableRecentChatsReference
                     )
                 }
+            )
+            item(
+                onClick = onOpenVectorRecall,
+                headlineContent = { Text(stringResource(R.string.setting_vector_recall_title)) },
+                supportingContent = { Text(stringResource(R.string.setting_vector_recall_desc)) },
             )
             item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder)) },
