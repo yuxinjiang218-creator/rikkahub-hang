@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
@@ -92,8 +93,14 @@ fun SettingVectorRecallPage(
         )
     }
 
-    LaunchedEffect(config.enabled) {
-        if (config.enabled) {
+    LaunchedEffect(config.enabled, config.serverUrl, config.username, config.password) {
+        if (
+            config.enabled &&
+            config.serverUrl.toHttpUrlOrNull() != null &&
+            config.username.isNotBlank() &&
+            config.password.isNotBlank()
+        ) {
+            delay(800)
             withContext(Dispatchers.IO) {
                 syncAll()
             }

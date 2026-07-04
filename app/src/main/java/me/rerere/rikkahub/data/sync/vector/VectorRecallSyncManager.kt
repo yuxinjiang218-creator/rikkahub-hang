@@ -55,6 +55,10 @@ class VectorRecallSyncManager(
         if (!handshake()) return@withContext
         val config = settingsStore.settingsFlow.first().vectorRecallConfig
         val summariesByAssistant = summaries.groupBy { it.assistantId }
+        Log.i(
+            TAG,
+            "sync all start: summaries=${summaries.size}, assistants=${(assistantIds + summariesByAssistant.keys).size}"
+        )
         (assistantIds + summariesByAssistant.keys).forEach { assistantId ->
             val assistantConversations = summariesByAssistant[assistantId].orEmpty()
             val dirty = runCatching {
@@ -75,12 +79,22 @@ class VectorRecallSyncManager(
                 state.markFailed(error.message)
             }.getOrElse { emptyList() }
 
-            for (conversationId in dirty.mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }) {
-                loadConversation(conversationId)?.let { conversation ->
-                    uploadConversation(conversation)
+            Log.i(
+                TAG,
+                "sync diff done: assistant=$assistantId, conversations=${assistantConversations.size}, dirty=${dirty.size}"
+            )
+            for (conversationId in dirty) {
+                runCatching {
+                    val uuid = Uuid.parse(conversationId)
+                    loadConversation(uuid)?.let { conversation ->
+                        uploadConversation(conversation)
+                    } ?: Log.w(TAG, "dirty conversation missing locally: $conversationId")
+                }.onFailure { error ->
+                    Log.w(TAG, "sync dirty conversation failed: $conversationId", error)
                 }
             }
         }
+        Log.i(TAG, "sync all done")
     }
 
     suspend fun uploadConversation(conversation: Conversation) = withContext(Dispatchers.IO) {
