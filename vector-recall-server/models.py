@@ -68,6 +68,9 @@ class RecallResult(BaseModel):
     createdAt: int
     snippet: str
     score: float
+    chunkIndex: int | None = None
+    chunkStartOffset: int | None = None
+    chunkEndOffset: int | None = None
 
 
 class RecallResponse(BaseModel):

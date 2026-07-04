@@ -163,7 +163,7 @@ private fun UIMessage.toVectorUploadMessageDto(isSelected: Boolean): VectorUploa
     return VectorUploadMessageDto(
         messageId = id.toString(),
         role = role.name.lowercase(),
-        text = text.take(10_000),
+        text = text,
         createdAt = createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
         isSelected = isSelected,
     )

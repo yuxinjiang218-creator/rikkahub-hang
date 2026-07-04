@@ -36,6 +36,23 @@ class MessageRow:
         return f"{self.conversation_id}:{self.node_id}:{self.message_id}"
 
 
+@dataclass
+class MessageChunkRow:
+    chunk_pk: str
+    message_pk: str
+    chunk_index: int
+    start_offset: int
+    end_offset: int
+    text: str
+    user_id: str
+    assistant_id: str
+    conversation_id: str
+    node_id: str
+    message_id: str
+    role: str
+    is_selected: int
+
+
 class Database:
     def __init__(self, path: str):
         Path(os.path.dirname(path) or ".").mkdir(parents=True, exist_ok=True)
@@ -72,6 +89,24 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_messages_assistant ON messages(assistant_id, user_id);
             CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
             CREATE INDEX IF NOT EXISTS idx_messages_selected ON messages(user_id, assistant_id, is_selected);
+
+            CREATE TABLE IF NOT EXISTS message_chunks (
+                chunk_pk TEXT PRIMARY KEY,
+                message_pk TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                start_offset INTEGER NOT NULL,
+                end_offset INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                assistant_id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                is_selected INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_pk, user_id);
+            CREATE INDEX IF NOT EXISTS idx_chunks_search ON message_chunks(user_id, assistant_id, is_selected, role);
             """
         )
         self.conn.commit()
@@ -160,6 +195,7 @@ class Database:
 
     def delete_message_by_pk(self, pk: str, user_id: str) -> None:
         conv_id, node_id, msg_id = pk.split(":", 2)
+        self.delete_chunks_for_message(pk, user_id)
         self.conn.execute(
             """
             DELETE FROM messages
@@ -179,6 +215,64 @@ class Database:
         ).fetchone()
         return self._message_from_row(row) if row else None
 
+    def upsert_chunk(self, chunk: MessageChunkRow) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO message_chunks(
+                chunk_pk, message_pk, chunk_index, start_offset, end_offset, text, user_id,
+                assistant_id, conversation_id, node_id, message_id, role, is_selected
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(chunk_pk) DO UPDATE SET
+                message_pk = excluded.message_pk,
+                chunk_index = excluded.chunk_index,
+                start_offset = excluded.start_offset,
+                end_offset = excluded.end_offset,
+                text = excluded.text,
+                user_id = excluded.user_id,
+                assistant_id = excluded.assistant_id,
+                conversation_id = excluded.conversation_id,
+                node_id = excluded.node_id,
+                message_id = excluded.message_id,
+                role = excluded.role,
+                is_selected = excluded.is_selected
+            """,
+            (
+                chunk.chunk_pk,
+                chunk.message_pk,
+                chunk.chunk_index,
+                chunk.start_offset,
+                chunk.end_offset,
+                chunk.text,
+                chunk.user_id,
+                chunk.assistant_id,
+                chunk.conversation_id,
+                chunk.node_id,
+                chunk.message_id,
+                chunk.role,
+                chunk.is_selected,
+            ),
+        )
+
+    def get_chunk_by_pk(self, chunk_pk: str, user_id: str) -> MessageChunkRow | None:
+        row = self.conn.execute(
+            "SELECT * FROM message_chunks WHERE chunk_pk = ? AND user_id = ?",
+            (chunk_pk, user_id),
+        ).fetchone()
+        return self._chunk_from_row(row) if row else None
+
+    def get_chunk_pks_for_message(self, message_pk: str, user_id: str) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT chunk_pk FROM message_chunks WHERE message_pk = ? AND user_id = ?",
+            (message_pk, user_id),
+        ).fetchall()
+        return [row["chunk_pk"] for row in rows]
+
+    def delete_chunks_for_message(self, message_pk: str, user_id: str) -> None:
+        self.conn.execute(
+            "DELETE FROM message_chunks WHERE message_pk = ? AND user_id = ?",
+            (message_pk, user_id),
+        )
+
     def selected_messages(self, user_id: str, assistant_id: str) -> list[MessageRow]:
         rows = self.conn.execute(
             """
@@ -189,8 +283,20 @@ class Database:
         ).fetchall()
         return [self._message_from_row(row) for row in rows]
 
+    def selected_indexable_messages(self) -> list[MessageRow]:
+        rows = self.conn.execute(
+            """
+            SELECT * FROM messages
+            WHERE is_selected = 1 AND role IN ('user', 'assistant') AND TRIM(text) != ''
+            """
+        ).fetchall()
+        return [self._message_from_row(row) for row in rows]
+
     def commit(self) -> None:
         self.conn.commit()
+
+    def rollback(self) -> None:
+        self.conn.rollback()
 
     @staticmethod
     def _message_from_row(row: sqlite3.Row) -> MessageRow:
@@ -208,4 +314,22 @@ class Database:
             created_at=row["created_at"],
             conversation_title=row["conversation_title"],
             conversation_update_at=row["conversation_update_at"],
+        )
+
+    @staticmethod
+    def _chunk_from_row(row: sqlite3.Row) -> MessageChunkRow:
+        return MessageChunkRow(
+            chunk_pk=row["chunk_pk"],
+            message_pk=row["message_pk"],
+            chunk_index=row["chunk_index"],
+            start_offset=row["start_offset"],
+            end_offset=row["end_offset"],
+            text=row["text"],
+            user_id=row["user_id"],
+            assistant_id=row["assistant_id"],
+            conversation_id=row["conversation_id"],
+            node_id=row["node_id"],
+            message_id=row["message_id"],
+            role=row["role"],
+            is_selected=row["is_selected"],
         )
