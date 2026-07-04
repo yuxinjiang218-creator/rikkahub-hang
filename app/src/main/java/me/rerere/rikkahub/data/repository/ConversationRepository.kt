@@ -43,6 +43,7 @@ class ConversationRepository(
     companion object {
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
+        private const val BACKUP_INDEX_BATCH_SIZE = 25
     }
 
     private val messageIndexMutex = Mutex()
@@ -279,6 +280,7 @@ class ConversationRepository(
         var skipped = 0
         var insertedMemories = 0
         var skippedMemories = 0
+        val changedConversationIds = mutableListOf<String>()
 
         database.withTransaction {
             backupConversationDAO.getAllIds().forEach { conversationId ->
@@ -302,6 +304,7 @@ class ConversationRepository(
                 if (backupNodes.isNotEmpty()) {
                     messageNodeDAO.insertAll(backupNodes)
                 }
+                changedConversationIds += conversationId
             }
 
             val existingMemoryKeys = currentMemoryDAO.getAllMemories()
@@ -327,7 +330,7 @@ class ConversationRepository(
 
         val changed = inserted + updated
         if (changed > 0) {
-            rebuildAllIndexes()
+            reindexAfterBackupMerge(changedConversationIds)
         }
         return BackupDatabaseMergeResult(
             conversations = ConversationMergeResult(
@@ -514,6 +517,28 @@ class ConversationRepository(
         }
     }
 
+    private suspend fun reindexAfterBackupMerge(changedConversationIds: List<String>) {
+        val distinctChangedIds = changedConversationIds.distinct()
+        if (distinctChangedIds.isEmpty()) return
+        messageIndexMutex.withLock {
+            val schemaReady = messageFtsManager.ensureSchema()
+            val indexReady = schemaReady && messageFtsManager.isReady()
+            val allIds = if (indexReady) emptyList() else conversationDAO.getAllIds()
+            val plan = chooseBackupReindexPlan(
+                indexReady = indexReady,
+                changedConversationIds = distinctChangedIds,
+                allConversationIds = allIds,
+            )
+            if (plan.clearExistingIndex) {
+                messageFtsManager.deleteAll()
+            }
+            indexConversationIdsLocked(plan.conversationIds)
+            if (plan.markReadyWhenDone) {
+                messageFtsManager.markReady()
+            }
+        }
+    }
+
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageIndexMutex.withLock {
             rebuildAllIndexesLocked(onProgress)
@@ -536,15 +561,26 @@ class ConversationRepository(
     private suspend fun rebuildAllIndexesLocked(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()
         val allIds = conversationDAO.getAllIds()
-        val total = allIds.size
-        allIds.forEachIndexed { index, id ->
-            val entity = conversationDAO.getConversationById(id) ?: return@forEachIndexed
-            val nodes = loadMessageNodes(entity.id)
-            val conversation = conversationEntityToConversation(entity, nodes)
-            messageFtsManager.indexConversation(conversation)
-            onProgress(index + 1, total)
-        }
+        indexConversationIdsLocked(allIds, onProgress)
         messageFtsManager.markReady()
+    }
+
+    private suspend fun indexConversationIdsLocked(
+        conversationIds: List<String>,
+        onProgress: (current: Int, total: Int) -> Unit = { _, _ -> },
+    ) {
+        val total = conversationIds.size
+        var current = 0
+        conversationIds.chunked(BACKUP_INDEX_BATCH_SIZE).forEach { chunk ->
+            val conversations = chunk.mapNotNull { id ->
+                val entity = conversationDAO.getConversationById(id) ?: return@mapNotNull null
+                val nodes = loadMessageNodes(entity.id)
+                conversationEntityToConversation(entity, nodes)
+            }
+            messageFtsManager.indexConversations(conversations)
+            current += chunk.size
+            onProgress(current.coerceAtMost(total), total)
+        }
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {
@@ -732,6 +768,35 @@ data class MemoryMergeResult(
     val updated: Int,
     val skipped: Int,
 )
+
+internal data class BackupReindexPlan(
+    val conversationIds: List<String>,
+    val clearExistingIndex: Boolean,
+    val markReadyWhenDone: Boolean,
+)
+
+internal fun chooseBackupReindexPlan(
+    indexReady: Boolean,
+    changedConversationIds: List<String>,
+    allConversationIds: List<String>,
+): BackupReindexPlan {
+    val distinctChangedIds = changedConversationIds.distinct()
+    if (indexReady) {
+        return BackupReindexPlan(
+            conversationIds = distinctChangedIds,
+            clearExistingIndex = false,
+            markReadyWhenDone = false,
+        )
+    }
+
+    val allIdSet = allConversationIds.toSet()
+    val changedCoversAll = allIdSet.isNotEmpty() && distinctChangedIds.toSet().containsAll(allIdSet)
+    return BackupReindexPlan(
+        conversationIds = if (changedCoversAll) distinctChangedIds else allConversationIds,
+        clearExistingIndex = true,
+        markReadyWhenDone = true,
+    )
+}
 
 internal fun normalizeMemoryContent(content: String): String =
     content.trim().replace(Regex("\\s+"), " ")

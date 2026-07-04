@@ -21,4 +21,43 @@ class BackupMergePolicyTest {
             normalizeMemoryContent("  user   prefers\nconcise\t replies  "),
         )
     }
+
+    @Test
+    fun `backup reindex only touches changed conversations when index is ready`() {
+        val plan = chooseBackupReindexPlan(
+            indexReady = true,
+            changedConversationIds = listOf("c2", "c1", "c2"),
+            allConversationIds = emptyList(),
+        )
+
+        assertEquals(listOf("c2", "c1"), plan.conversationIds)
+        assertFalse(plan.clearExistingIndex)
+        assertFalse(plan.markReadyWhenDone)
+    }
+
+    @Test
+    fun `backup reindex marks ready when changed conversations cover an unready index`() {
+        val plan = chooseBackupReindexPlan(
+            indexReady = false,
+            changedConversationIds = listOf("c1", "c2", "c1"),
+            allConversationIds = listOf("c1", "c2"),
+        )
+
+        assertEquals(listOf("c1", "c2"), plan.conversationIds)
+        assertTrue(plan.clearExistingIndex)
+        assertTrue(plan.markReadyWhenDone)
+    }
+
+    @Test
+    fun `backup reindex rebuilds all conversations when unready index has unchanged rows`() {
+        val plan = chooseBackupReindexPlan(
+            indexReady = false,
+            changedConversationIds = listOf("c2"),
+            allConversationIds = listOf("c1", "c2", "c3"),
+        )
+
+        assertEquals(listOf("c1", "c2", "c3"), plan.conversationIds)
+        assertTrue(plan.clearExistingIndex)
+        assertTrue(plan.markReadyWhenDone)
+    }
 }

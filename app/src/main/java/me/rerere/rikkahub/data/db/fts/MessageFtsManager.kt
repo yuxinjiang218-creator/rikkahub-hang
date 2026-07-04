@@ -105,12 +105,25 @@ class MessageFtsManager(private val database: AppDatabase) {
 
     suspend fun indexConversation(conversation: Conversation) = withContext(Dispatchers.IO) {
         ensureSchema()
-        val conversationId = conversation.id.toString()
-        db.execSQL("DELETE FROM $FTS_TABLE WHERE conversation_id = ?", arrayOf(conversationId))
-        insertNodes(
-            conversation = conversation,
-            nodes = conversation.messageNodes,
-        )
+        db.beginTransaction()
+        try {
+            indexConversationUnchecked(conversation)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    suspend fun indexConversations(conversations: List<Conversation>) = withContext(Dispatchers.IO) {
+        if (conversations.isEmpty()) return@withContext
+        ensureSchema()
+        db.beginTransaction()
+        try {
+            conversations.forEach(::indexConversationUnchecked)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     suspend fun deleteConversation(conversationId: String) = withContext(Dispatchers.IO) {
@@ -248,6 +261,15 @@ class MessageFtsManager(private val database: AppDatabase) {
                 )
             }
         }
+    }
+
+    private fun indexConversationUnchecked(conversation: Conversation) {
+        val conversationId = conversation.id.toString()
+        db.execSQL("DELETE FROM $FTS_TABLE WHERE conversation_id = ?", arrayOf(conversationId))
+        insertNodes(
+            conversation = conversation,
+            nodes = conversation.messageNodes,
+        )
     }
 
     private fun ensureMetaTable() {
