@@ -14,7 +14,7 @@ val buildWebUi = tasks.register<Exec>("buildWebUi") {
     workingDir = webUiDir.asFile
     when {
         Os.isFamily(Os.FAMILY_MAC) -> commandLine("zsh", "-ic", "pnpm run build")
-        Os.isFamily(Os.FAMILY_WINDOWS) -> commandLine("cmd", "/c", "pnpm run build")
+        Os.isFamily(Os.FAMILY_WINDOWS) -> commandLine("cmd", "/c", "corepack pnpm run build")
         else -> commandLine("pnpm", "run", "build")
     }
 
