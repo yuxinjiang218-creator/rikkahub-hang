@@ -82,6 +82,10 @@ private fun String.imageMimeTypeFromPath(): String? = when (substringAfterLast('
     "webp" -> "image/webp"
     "bmp" -> "image/bmp"
     "svg" -> "image/svg+xml"
+    "heic" -> "image/heic"
+    "heif" -> "image/heif"
+    "avif" -> "image/avif"
+    "ico" -> "image/x-icon"
     else -> null
 }
 
@@ -338,12 +342,21 @@ private suspend fun WorkspaceRepository.readTextInRootfs(
         return uploadFile.readText(Charsets.UTF_8)
     }
 
-    val (area, relativePath) = rootfsPathToAreaAndRelative(path)
-    val size = fileSize(workspaceId, area, relativePath)
+    val buffer = readRootfsBuffer(workspaceId, path)
+    return buffer.toString(Charsets.UTF_8.name())
+}
+
+private suspend fun WorkspaceRepository.readRootfsBuffer(
+    workspaceId: String,
+    path: String,
+): ByteArrayOutputStream {
+    val size = rootfsFileSize(workspaceId, path)
     require(size <= MAX_READ_FILE_BYTES) {
         "File is too large to read: $path (${size / 1024 / 1024}MB, max ${MAX_READ_FILE_BYTES / 1024 / 1024}MB). Use shell commands like head, tail, or grep to read parts of it."
     }
-    return ByteArrayOutputStream(size.toInt()).also { exportRootfsFile(workspaceId, path, it) }
+    return ByteArrayOutputStream(size.toInt()).also {
+        exportRootfsFile(workspaceId, path, it)
+    }
 }
 
 private suspend fun WorkspaceRepository.readImageInRootfs(
@@ -354,10 +367,7 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
     val bytes = if (uploadFile != null) {
         uploadFile.readBytes()
     } else {
-        val (area, relativePath) = rootfsPathToAreaAndRelative(path)
-        val buffer = ByteArrayOutputStream()
-        exportFile(workspaceId, area, relativePath, buffer)
-        buffer.toByteArray()
+        readRootfsBuffer(workspaceId, path).toByteArray()
     }
     require(bytes.size <= MAX_IMAGE_BYTES) {
         "Image is too large to view: $path (${bytes.size / 1024 / 1024}MB, max ${MAX_IMAGE_BYTES / 1024 / 1024}MB)."
