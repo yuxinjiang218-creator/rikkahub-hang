@@ -1,8 +1,11 @@
 package me.rerere.ai.provider.providers.openai
 
 import android.util.Log
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArrayBuilder
@@ -144,7 +147,9 @@ class ResponseAPI(
                 val json = json.parseToJsonElement(data).jsonObject
                 val chunk = parseResponseDelta(json)
                 if (chunk != null) {
-                    trySend(chunk)
+                    trySend(chunk).onFailure { e ->
+                        Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                    }
                 }
                 if (type == "response.completed") {
                     close()
@@ -186,7 +191,8 @@ class ResponseAPI(
             println("[awaitClose] 关闭eventSource ")
             eventSource.cancel()
         }
-    }
+        // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
+    }.buffer(Channel.UNLIMITED)
 
     internal fun buildRequestBody(
         providerSetting: ProviderSetting.OpenAI,
@@ -237,26 +243,28 @@ class ResponseAPI(
             }
 
             // tools
-            if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
+            // Response API 的 tools 是扁平数组, 函数工具和内置工具可以共存, 必须写在同一个 key 下,
+            // 否则后写入的会覆盖前者
+            val useFunctionTools =
+                params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()
+            if (useFunctionTools || params.model.tools.isNotEmpty()) {
                 putJsonArray("tools") {
-                    params.tools.forEach { tool ->
-                        add(buildJsonObject {
-                            put("type", "function")
-                            put("name", tool.name)
-                            put("description", tool.description)
-                            put(
-                                "parameters",
-                                json.encodeToJsonElement(
-                                    tool.parameters()
+                    if (useFunctionTools) {
+                        params.tools.forEach { tool ->
+                            add(buildJsonObject {
+                                put("type", "function")
+                                put("name", tool.name)
+                                put("description", tool.description)
+                                put(
+                                    "parameters",
+                                    json.encodeToJsonElement(
+                                        tool.parameters()
+                                    )
                                 )
-                            )
-                        })
+                            })
+                        }
                     }
-                }
-            }
-            // built-in tools
-            if (params.model.tools.isNotEmpty()) {
-                putJsonArray("tools") {
+                    // built-in tools
                     params.model.tools.forEach { builtInTool ->
                         when (builtInTool) {
                             BuiltInTools.Search -> {

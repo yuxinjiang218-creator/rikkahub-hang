@@ -8,6 +8,8 @@ import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
+import me.rerere.rikkahub.utils.SimpleCache
+import java.util.concurrent.TimeUnit
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -21,7 +23,8 @@ data class Assistant(
     val systemPrompt: String = "",
     val temperature: Float? = null,
     val topP: Float? = null,
-    val contextMessageSize: Int = 0,
+    // 上下文消息条数上限, 超出后阶梯式截断; 0 表示不限制
+    val contextMessageLimit: Int = 0,
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useGlobalMemory: Boolean = false, // 使用全局共享记忆而非助手隔离记忆
@@ -37,6 +40,7 @@ data class Assistant(
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
     val localTools: List<LocalToolOption> = listOf(LocalToolOption.TimeInfo),
+    val enableWebSearch: Boolean = false, // 网络搜索开关(每个助手独立)
     val workspaceId: Uuid? = null,
     val background: String? = null, // 聊天页背景图地址(本地文件 URI 或网络 URL), 为 null 时无背景
     val backgroundOpacity: Float = 1.0f, // 背景图不透明度(0~1)
@@ -79,6 +83,19 @@ data class AssistantRegex(
     val visualOnly: Boolean = false, // 是否仅在视觉上影响
 )
 
+// 流式输出时每个chunk都会调用replaceRegexes，正则必须缓存编译结果，
+// 否则长回复期间会重复编译上万次；编译失败也缓存，避免反复构造异常
+private val regexCache = SimpleCache.builder<String, Result<Regex>>()
+    .expireAfterWrite(10, TimeUnit.MINUTES)
+    .build()
+
+private fun compileRegexCached(pattern: String): Regex? {
+    regexCache.getIfPresent(pattern)?.let { return it.getOrNull() }
+    val result = runCatching { Regex(pattern) }.onFailure { it.printStackTrace() }
+    regexCache.put(pattern, result)
+    return result.getOrNull()
+}
+
 fun String.replaceRegexes(
     assistant: Assistant?,
     scope: AssistantAffectScope,
@@ -88,16 +105,15 @@ fun String.replaceRegexes(
     if (assistant.regexes.isEmpty()) return this
     return assistant.regexes.fold(this) { acc, regex ->
         if (regex.enabled && regex.visualOnly == visual && regex.affectingScope.contains(scope)) {
+            val compiled = compileRegexCached(regex.findRegex) ?: return@fold acc
             try {
-                val result = acc.replace(
-                    regex = Regex(regex.findRegex),
+                acc.replace(
+                    regex = compiled,
                     replacement = regex.replaceString,
                 )
-                // println("Regex: ${regex.findRegex} -> ${result}")
-                result
             } catch (e: Exception) {
                 e.printStackTrace()
-                // 如果正则表达式格式错误，返回原字符串
+                // 替换字符串可能引用不存在的分组，失败时返回原字符串
                 acc
             }
         } else {
