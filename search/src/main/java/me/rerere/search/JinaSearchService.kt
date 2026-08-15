@@ -72,11 +72,12 @@ object JinaSearchService : SearchService<SearchServiceOptions.JinaOptions> {
             }
 
             val searchUrl = serviceOptions.searchUrl.ifBlank { DEFAULT_SEARCH_URL }
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url(searchUrl)
                 .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Accept", "application/json")
                 .addHeader("Content-Type", "application/json")
                 .build()
@@ -117,11 +118,12 @@ object JinaSearchService : SearchService<SearchServiceOptions.JinaOptions> {
             }
 
             val scrapeUrl = serviceOptions.scrapeUrl.ifBlank { DEFAULT_SCRAPE_URL }
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url(scrapeUrl)
                 .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Accept", "application/json")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("X-Return-Format", "markdown")

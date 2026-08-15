@@ -63,11 +63,12 @@ object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
                 put("search_engine", JsonPrimitive("search_std"))
                 put("count", JsonPrimitive(commonOptions.resultSize))
             }
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url("https://open.bigmodel.cn/api/paas/v4/web_search")
                 .post(json.encodeToString(body).toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .build()
 
             val response = httpClient.newCall(request).execute()

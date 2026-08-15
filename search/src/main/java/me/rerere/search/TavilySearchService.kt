@@ -21,7 +21,6 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.search.SearchResult.SearchResultItem
 import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import me.rerere.search.SearchService.Companion.keyRoulette
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -95,7 +94,7 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
                 put("include_answer", "advanced")
                 put("include_images", true)
             }
-            val apiKey = keyRoulette.next(serviceOptions.apiKey, serviceOptions.id.toString())
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url("https://api.tavily.com/search")
@@ -138,7 +137,7 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
                     add(url)
                 })
             }
-            val apiKey = keyRoulette.next(serviceOptions.apiKey, serviceOptions.id.toString())
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url("https://api.tavily.com/extract")
                 .post(body.toString().toRequestBody())

@@ -62,6 +62,7 @@ object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOp
             if (serviceOptions.apiKey.isBlank()) {
                 error("Perplexity API key is required")
             }
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val query = params["query"]?.jsonPrimitive?.content
                 ?: error("query is required")
@@ -86,7 +87,7 @@ object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOp
             val request = Request.Builder()
                 .url(PERPLEXITY_ENDPOINT)
                 .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .build()
 

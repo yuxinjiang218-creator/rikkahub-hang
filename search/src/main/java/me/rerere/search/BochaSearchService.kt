@@ -63,11 +63,12 @@ object BochaSearchService : SearchService<SearchServiceOptions.BochaOptions> {
                 put("summary", JsonPrimitive(serviceOptions.summary))
                 put("count", JsonPrimitive(commonOptions.resultSize))
             }
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url("https://api.bochaai.com/v1/web-search")
                 .post(json.encodeToString(body).toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .build()
 

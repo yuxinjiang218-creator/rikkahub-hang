@@ -18,7 +18,6 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.search.SearchResult.SearchResultItem
 import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import me.rerere.search.SearchService.Companion.keyRoulette
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -74,7 +73,7 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                 put("outputType", JsonPrimitive("sourcedAnswer"))
                 put("includeImages", JsonPrimitive("false"))
             }
-            val apiKey = keyRoulette.next(serviceOptions.apiKey, serviceOptions.id.toString())
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url("https://api.linkup.so/v1/search")
@@ -122,7 +121,7 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                 put("renderJs", JsonPrimitive(false))
                 put("extractImages", JsonPrimitive(false))
             }
-            val apiKey = keyRoulette.next(serviceOptions.apiKey, serviceOptions.id.toString())
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url("https://api.linkup.so/v1/fetch")

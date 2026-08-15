@@ -58,11 +58,12 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
             val url = "https://api.search.brave.com/res/v1/web/search" +
                     "?q=${java.net.URLEncoder.encode(query, "UTF-8")}" +
                     "&count=${commonOptions.resultSize}"
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url(url)
                 .addHeader("Accept", "application/json")
-                .addHeader("X-Subscription-Token", serviceOptions.apiKey)
+                .addHeader("X-Subscription-Token", apiKey)
                 .build()
 
             val response = httpClient.newCall(request).await()

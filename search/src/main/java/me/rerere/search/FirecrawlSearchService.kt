@@ -110,14 +110,15 @@ object FirecrawlSearchService : SearchService<SearchServiceOptions.FirecrawlOpti
                     })
                 }
             }
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url("https://api.firecrawl.dev/v2/search")
                 .post(body.toString().toRequestBody())
                 .addHeader("Content-Type", "application/json")
                 .apply {
-                    if (serviceOptions.apiKey.isNotBlank()) {
-                        addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                    if (apiKey.isNotBlank()) {
+                        addHeader("Authorization", "Bearer $apiKey")
                     }
                 }
                 .build()
@@ -173,14 +174,15 @@ object FirecrawlSearchService : SearchService<SearchServiceOptions.FirecrawlOpti
                     add("markdown")
                 })
             }
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
 
             val request = Request.Builder()
                 .url("https://api.firecrawl.dev/v2/scrape")
                 .post(body.toString().toRequestBody())
                 .addHeader("Content-Type", "application/json")
                 .apply {
-                    if (serviceOptions.apiKey.isNotBlank()) {
-                        addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                    if (apiKey.isNotBlank()) {
+                        addHeader("Authorization", "Bearer $apiKey")
                     }
                 }
                 .build()
@@ -246,6 +248,5 @@ data class FirecrawlSearchResultData(
     val web: List<FirecrawlSearchResultWebItem>? = emptyList(),
     val news: List<FirecrawlSearchResultNewsItem>? = emptyList(),
 )
-
 
 

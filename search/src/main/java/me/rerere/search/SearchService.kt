@@ -91,6 +91,9 @@ interface SearchService<T : SearchServiceOptions> {
     }
 }
 
+internal fun nextSearchApiKey(keys: String, serviceId: Uuid): String =
+    SearchService.keyRoulette.next(keys, serviceId.toString())
+
 @Serializable
 data class SearchCommonOptions(
     val resultSize: Int = 10
