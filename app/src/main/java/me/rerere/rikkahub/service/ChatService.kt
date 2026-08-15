@@ -23,17 +23,20 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
+import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.StreamChunk
+import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -41,7 +44,6 @@ import me.rerere.ai.ui.canResumeToolExecution
 import me.rerere.ai.ui.findKeepStartIndexForVisibleMessages
 import me.rerere.ai.ui.finishPendingTools
 import me.rerere.ai.ui.finishReasoning
-import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
@@ -109,6 +111,10 @@ internal fun backgroundTextGenerationParams(
     customBody = model.customBodies,
 )
 
+internal fun shouldUseExternalWebSearch(assistant: Assistant, model: Model): Boolean {
+    return assistant.enableWebSearch && BuiltInTools.Search !in model.tools
+}
+
 data class ChatError(
     val id: Uuid = Uuid.random(),
     val title: String? = null,
@@ -148,12 +154,13 @@ private val outputTransformers by lazy {
 internal suspend fun collectCompressionSummaryFromStream(
     prompt: String,
     model: Model,
-    chunks: Flow<MessageChunk>,
+    chunks: Flow<StreamChunk>,
     onChunk: suspend () -> Unit = {},
 ): String {
     var messages = listOf(UIMessage.user(prompt))
+    val streamChunkHandler = StreamChunkHandler(model)
     chunks.collect { chunk ->
-        messages = messages.handleMessageChunk(chunk = chunk, model = model)
+        messages = streamChunkHandler.handle(messages, chunk)
         onChunk()
     }
     return messages.lastOrNull { it.role == MessageRole.ASSISTANT }
@@ -162,13 +169,6 @@ internal suspend fun collectCompressionSummaryFromStream(
         ?.takeIf { it.isNotBlank() }
         ?: throw IllegalStateException("Failed to generate compressed summary")
 }
-
-internal fun MessageChunk.toCompressionSummary(): String? =
-    choices.firstOrNull()
-        ?.message
-        ?.toText()
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
 
 internal fun Throwable.isStreamUnsupportedForCompression(): Boolean {
     if (this is NotImplementedError || this is UnsupportedOperationException) return true
@@ -558,6 +558,7 @@ class ChatService(
         } else {
             model.displayName
         }
+        val useExternalWebSearch = shouldUseExternalWebSearch(assistant, model)
 
         runCatching {
 
@@ -566,7 +567,7 @@ class ChatService(
 
             // memory tool
             if (!model.abilities.contains(ModelAbility.TOOL)) {
-                if (assistant.enableWebSearch || mcpManager.getAllAvailableTools().isNotEmpty()) {
+                if (useExternalWebSearch || mcpManager.getAllAvailableTools().isNotEmpty()) {
                     addError(
                         IllegalStateException(context.getString(R.string.tools_warning)),
                         conversationId,
@@ -646,7 +647,7 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
-                    if (assistant.enableWebSearch) {
+                    if (useExternalWebSearch) {
                         addAll(createSearchTools(settings))
                     }
                     addAll(localTools.getTools(assistant.localTools))
@@ -853,18 +854,19 @@ class ChatService(
         conversationId: Uuid,
         conversation: Conversation,
         force: Boolean = false
-    ) {
+    ) = withContext(Dispatchers.IO) {
         val shouldGenerate = when {
             force -> true
             conversation.title.isBlank() -> true
             else -> false
         }
-        if (!shouldGenerate) return
+        if (!shouldGenerate) return@withContext
 
         runCatching {
             val settings = settingsStore.settingsFlow.first()
-            val model = settings.findModelById(settings.titleModelId, fallback = settings.fastModelId) ?: return
-            val provider = model.findProvider(settings.providers) ?: return
+            val model = settings.findModelById(settings.titleModelId, fallback = settings.fastModelId)
+                ?: return@runCatching
+            val provider = model.findProvider(settings.providers) ?: return@runCatching
 
             val providerHandler = providerManager.getProviderByType(provider)
             val result = providerHandler.generateText(
@@ -884,7 +886,7 @@ class ChatService(
             conversationRepo.getConversationById(conversation.id)?.let {
                 saveConversation(
                     conversationId,
-                    it.copy(title = result.choices[0].message?.toText()?.trim() ?: "")
+                    it.copy(title = result.message.toText().trim())
                 )
             }
         }.onFailure {
@@ -900,12 +902,16 @@ class ChatService(
 
     // ---- 生成建议 ----
 
-    suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
+    suspend fun generateSuggestion(
+        conversationId: Uuid,
+        conversation: Conversation,
+    ) = withContext(Dispatchers.IO) {
         runCatching {
             val settings = settingsStore.settingsFlow.first()
-            if (!settings.enableSuggestion) return
-            val model = settings.findModelById(settings.suggestionModelId, fallback = settings.fastModelId) ?: return
-            val provider = model.findProvider(settings.providers) ?: return
+            if (!settings.enableSuggestion) return@runCatching
+            val model = settings.findModelById(settings.suggestionModelId, fallback = settings.fastModelId)
+                ?: return@runCatching
+            val provider = model.findProvider(settings.providers) ?: return@runCatching
 
             sessions[conversationId]?.let { session ->
                 updateConversation(
@@ -928,8 +934,8 @@ class ChatService(
                 params = backgroundTextGenerationParams(model),
             )
             val suggestions =
-                result.choices[0].message?.toText()?.split("\n")?.map { it.trim() }
-                    ?.filter { it.isNotBlank() } ?: emptyList()
+                result.message.toText().split("\n").map { it.trim() }
+                    .filter { it.isNotBlank() }
 
             val latestConversation = conversationRepo.getConversationById(conversationId)
                 ?: sessions[conversationId]?.state?.value
@@ -1219,7 +1225,7 @@ class ChatService(
                 params = params,
             )
             throwIfCompressionCanceled(conversationId, runId)
-            result.toCompressionSummary()
+            result.message.toText().trim().takeIf { it.isNotBlank() }
                 ?: throw IllegalStateException("Failed to generate compressed summary")
         }.getOrThrow()
     }

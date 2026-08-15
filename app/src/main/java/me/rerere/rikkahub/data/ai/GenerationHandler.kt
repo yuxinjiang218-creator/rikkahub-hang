@@ -18,7 +18,6 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
-import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.GenerationAttemptTracker
 import me.rerere.ai.provider.Model
@@ -30,7 +29,8 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
-import me.rerere.ai.ui.handleMessageChunk
+import me.rerere.ai.ui.StreamChunkHandler
+import me.rerere.ai.ui.handleTextGenerationResult
 import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
@@ -545,46 +545,27 @@ class GenerationHandler(
             )
             try {
                 if (stream) {
+                    val streamChunkHandler = StreamChunkHandler(model)
                     providerImpl.streamText(
                         providerSetting = provider,
                         messages = internalMessages,
                         params = params
-                    ).collect {
+                    ).collect { chunk ->
                         tracker.recordStreamStarted()
                         activeRetryStatus = clearOwnedProcessingStatus(processingStatus, activeRetryStatus)
-                        messages = messages.handleMessageChunk(chunk = it, model = model)
+                        messages = streamChunkHandler.handle(messages, chunk)
                         producedContent = producedContent || hasGeneratedAssistantContent(messages)
-                        it.usage?.let { usage ->
-                            messages = messages.mapIndexed { index, message ->
-                                if (index == messages.lastIndex) {
-                                    message.copy(usage = message.usage.merge(usage))
-                                } else {
-                                    message
-                                }
-                            }
-                        }
                         onUpdateMessages(messages)
                     }
                 } else {
-                    val chunk = providerImpl.generateText(
+                    val result = providerImpl.generateText(
                         providerSetting = provider,
                         messages = internalMessages,
                         params = params,
                     )
-                    messages = messages.handleMessageChunk(chunk = chunk, model = model)
+                    messages = messages.handleTextGenerationResult(result = result, model = model)
                     producedContent = producedContent || hasGeneratedAssistantContent(messages)
                     activeRetryStatus = clearOwnedProcessingStatus(processingStatus, activeRetryStatus)
-                    chunk.usage?.let { usage ->
-                        messages = messages.mapIndexed { index, message ->
-                            if (index == messages.lastIndex) {
-                                message.copy(
-                                    usage = message.usage.merge(usage)
-                                )
-                            } else {
-                                message
-                            }
-                        }
-                    }
                     onUpdateMessages(messages)
                 }
                 activeRetryStatus = clearOwnedProcessingStatus(processingStatus, activeRetryStatus)
@@ -669,6 +650,7 @@ class GenerationHandler(
 
             var messages = listOf(UIMessage.user(prompt))
             var translatedText = ""
+            val streamChunkHandler = StreamChunkHandler(model)
 
             providerHandler.streamText(
                 providerSetting = provider,
@@ -678,7 +660,7 @@ class GenerationHandler(
                     reasoningLevel = ReasoningLevel.fromBudgetTokens(settings.translateThinkingBudget),
                 ),
             ).collect { chunk ->
-                messages = messages.handleMessageChunk(chunk)
+                messages = streamChunkHandler.handle(messages, chunk)
                 translatedText = messages.lastOrNull()?.toText() ?: ""
 
                 if (translatedText.isNotBlank()) {
@@ -689,7 +671,7 @@ class GenerationHandler(
         } else {
             // Use Qwen MT model with special translation options
             val messages = listOf(UIMessage.user(sourceText))
-            val chunk = providerHandler.generateText(
+            val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = messages,
                 params = TextGenerationParams(
@@ -710,7 +692,7 @@ class GenerationHandler(
                     )
                 ),
             )
-            val translatedText = chunk.choices.firstOrNull()?.message?.toText() ?: ""
+            val translatedText = result.message.toText()
 
             if (translatedText.isNotBlank()) {
                 onStreamUpdate?.invoke(translatedText)
