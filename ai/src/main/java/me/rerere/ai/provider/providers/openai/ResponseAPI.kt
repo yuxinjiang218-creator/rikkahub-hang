@@ -342,7 +342,13 @@ class ResponseAPI(
                             is UIMessagePart.Reasoning -> {
                                 if (!includeHistoryReasoning) return@forEach
                                 val reasoningMetadata = part.metadataAs<OpenAIReasoningMetadata>()
-                                val reasoningId = reasoningMetadata?.reasoningId ?: return@forEach
+                                val reasoningId = reasoningMetadata?.reasoningId
+                                if (reasoningId == null) {
+                                    if (part.reasoning.isNotEmpty()) {
+                                        contentBuffer.add(UIMessagePart.Text(part.reasoning))
+                                    }
+                                    return@forEach
+                                }
                                 if (!emittedReasoningIds.add(reasoningId)) {
                                     return@forEach
                                 }
@@ -369,7 +375,7 @@ class ResponseAPI(
                                                 })
                                             }
                                     })
-                                    val encryptedContent = reasoningMetadata?.encryptedContent
+                                    val encryptedContent = reasoningMetadata.encryptedContent
                                     val content = reasoningParts
                                         .filter { it.reasoningType == ReasoningType.REASONING_TEXT }
                                         .filter { it.reasoning.isNotEmpty() }

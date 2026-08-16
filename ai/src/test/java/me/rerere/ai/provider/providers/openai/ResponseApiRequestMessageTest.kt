@@ -372,7 +372,7 @@ class ResponseApiRequestMessageTest {
     }
 
     @Test
-    fun `reasoning from another provider should not be replayed`() {
+    fun `reasoning from another provider should replay as assistant text`() {
         val result = invokeBuildMessages(listOf(
             UIMessage(
                 role = MessageRole.ASSISTANT,
@@ -386,10 +386,24 @@ class ResponseApiRequestMessageTest {
         assertFalse(result.any {
             it.jsonObject["type"]?.jsonPrimitive?.content == "reasoning"
         })
-        assertEquals(
-            "final answer",
-            result.single().jsonObject["content"]?.jsonPrimitive?.content,
-        )
+        val content = result.single().jsonObject["content"]?.jsonArray ?: error("content not found")
+        assertEquals(2, content.size)
+        assertTrue(content.all { it.jsonObject["type"]?.jsonPrimitive?.content == "output_text" })
+        assertEquals("foreign reasoning", content[0].jsonObject["text"]?.jsonPrimitive?.content)
+        assertEquals("final answer", content[1].jsonObject["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `reasoning only message from another provider should replay as assistant text`() {
+        val result = invokeBuildMessages(listOf(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.Reasoning(reasoning = "foreign reasoning")),
+            ),
+        ))
+
+        assertEquals("assistant", result.single().jsonObject["role"]?.jsonPrimitive?.content)
+        assertEquals("foreign reasoning", result.single().jsonObject["content"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -411,6 +425,7 @@ class ResponseApiRequestMessageTest {
                                 encryptedContent = "encrypted",
                             ).toMetadata(),
                         ),
+                        UIMessagePart.Reasoning(reasoning = "foreign reasoning"),
                         UIMessagePart.Text("final answer"),
                     ),
                 ),
