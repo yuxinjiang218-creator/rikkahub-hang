@@ -108,7 +108,7 @@ fun buildHistoryQueryPlan(rawQuery: String): HistoryQueryPlan {
         .map { it.trim().replace(Regex("\\s+"), " ").take(MAX_ROUTE_QUERY_LENGTH) }
         .filter { it.length >= 2 && it != query }
         .take(MAX_SEGMENT_ROUTE_QUERIES).toList()
-    val structuredTokens = Regex("[A-Za-z0-9_./:\\\\-]{2,64}").findAll(compact)
+    val structuredTokens = Regex("[A-Za-z0-9_./:\\\\-]{2,64}").findAll(query)
         .map { it.value.trim().lowercase(Locale.ROOT) }
         .filter { token ->
             token.length in 2..MAX_ROUTE_QUERY_LENGTH && (token.any(Char::isDigit) || token.any { it in "._:/-\\\\" })
