@@ -183,8 +183,8 @@ private const val CONTEXT_KEEP_RATIO = 0.5f
 /**
  * 截取实际发送给模型的上下文
  *
- * 先丢弃最后一个压缩检查点之前的消息(它们只保留给用户查看), 再按 [limit] 限制条数。
- * 检查点本身是被压缩历史的唯一来源, 始终保留, 条数限制只作用于它之后的消息。
+ * 保留最后一个压缩检查点及其后要保留的最近消息，再按 [limit] 限制新增消息条数。
+ * 检查点本身是被压缩历史的唯一来源，始终排在保留消息之前。
  *
  * @param limit 触发截断的消息条数上限, 小于等于 0 表示不限制
  */
@@ -192,10 +192,10 @@ fun List<UIMessage>.limitContext(limit: Int): List<UIMessage> {
     val checkpointIndex = indexOfLast { it.isContextCheckpoint }
     if (checkpointIndex < 0) return limitMessageCount(limit)
     val checkpoint = this[checkpointIndex]
-    val retained = retainedContextBeforeCheckpoint(checkpointIndex, checkpoint)
-    return retained +
-        checkpoint +
-        subList(checkpointIndex + 1, size).limitMessageCount(limit)
+    val retained = retainedContextAroundCheckpoint(checkpointIndex, checkpoint)
+    val retainedIds = retained.mapTo(mutableSetOf()) { it.id }
+    val following = subList(checkpointIndex + 1, size).filterNot { it.id in retainedIds }
+    return listOf(checkpoint) + retained + following.limitMessageCount(limit)
 }
 
 /**
@@ -206,21 +206,21 @@ fun List<UIMessage>.checkpointContext(): List<UIMessage> {
     val checkpointIndex = indexOfLast { it.isContextCheckpoint }
     if (checkpointIndex < 0) return this
     val checkpoint = this[checkpointIndex]
-    val retained = retainedContextBeforeCheckpoint(checkpointIndex, checkpoint)
-    return retained +
-        checkpoint +
-        subList(checkpointIndex + 1, size)
+    val retained = retainedContextAroundCheckpoint(checkpointIndex, checkpoint)
+    val retainedIds = retained.mapTo(mutableSetOf()) { it.id }
+    val following = subList(checkpointIndex + 1, size).filterNot { it.id in retainedIds }
+    return listOf(checkpoint) + retained + following
 }
 
-private fun List<UIMessage>.retainedContextBeforeCheckpoint(
+private fun List<UIMessage>.retainedContextAroundCheckpoint(
     checkpointIndex: Int,
     checkpoint: UIMessage,
 ): List<UIMessage> {
     val beforeCheckpoint = subList(0, checkpointIndex)
+    val afterCheckpoint = subList(checkpointIndex + 1, size)
     val retainedIds = checkpoint.contextCheckpointRetainedMessageIds.toSet()
     if (retainedIds.isNotEmpty()) {
-        val retained = beforeCheckpoint.filter { it.id in retainedIds }
-        if (retained.size == retainedIds.size) return retained
+        return (beforeCheckpoint + afterCheckpoint).filter { it.id in retainedIds }
     }
     return beforeCheckpoint
         .filterNot { it.isContextCheckpoint }

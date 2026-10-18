@@ -176,7 +176,11 @@ internal fun Conversation.insertContextCheckpoint(
     usesChatModel: Boolean = true,
     retainedMessageIds: List<Uuid> = emptyList(),
 ): Conversation? {
-    val index = messageNodes.indexOfFirst { it.id == afterNodeId }
+    val retainedIds = retainedMessageIds.toSet()
+    val retainedNodes = messageNodes.filter { it.currentMessage.id in retainedIds }
+    if (retainedNodes.size != retainedIds.size) return null
+    val remainingNodes = messageNodes.filterNot { it.currentMessage.id in retainedIds }
+    val index = remainingNodes.indexOfFirst { it.id == afterNodeId }
     if (index == -1) return null
     val checkpoint = UIMessage.user(summary).copy(
         isContextCheckpoint = true,
@@ -190,8 +194,38 @@ internal fun Conversation.insertContextCheckpoint(
         contextCheckpointRetainedMessageIds = retainedMessageIds,
     ).toMessageNode()
     return copy(
-        messageNodes = messageNodes.subList(0, index + 1) + checkpoint + messageNodes.subList(index + 1, messageNodes.size),
+        messageNodes = remainingNodes.subList(0, index + 1) +
+            checkpoint +
+            retainedNodes +
+            remainingNodes.subList(index + 1, remainingNodes.size),
     )
+}
+
+/** Moves each checkpoint's retained messages after its summary, including conversations saved by older versions. */
+internal fun Conversation.normalizeContextCheckpointOrder(): Conversation {
+    val checkpointIds = messageNodes
+        .filter { it.currentMessage.isContextCheckpoint }
+        .map { it.currentMessage.id }
+    if (checkpointIds.isEmpty()) return this
+
+    var normalizedNodes = messageNodes
+    checkpointIds.forEach { checkpointId ->
+        val checkpointIndex = normalizedNodes.indexOfFirst { it.currentMessage.id == checkpointId }
+        if (checkpointIndex < 0) return@forEach
+        val checkpointNode = normalizedNodes[checkpointIndex]
+        val retainedIds = checkpointNode.currentMessage.contextCheckpointRetainedMessageIds.toSet()
+        if (retainedIds.isEmpty()) return@forEach
+
+        val retainedNodes = normalizedNodes.filter { it.currentMessage.id in retainedIds }
+        if (retainedNodes.size != retainedIds.size) return@forEach
+        val remainingNodes = normalizedNodes.filterNot { it.currentMessage.id in retainedIds }
+        val normalizedCheckpointIndex = remainingNodes.indexOfFirst { it.id == checkpointNode.id }
+        if (normalizedCheckpointIndex < 0) return@forEach
+        normalizedNodes = remainingNodes.subList(0, normalizedCheckpointIndex + 1) +
+            retainedNodes +
+            remainingNodes.subList(normalizedCheckpointIndex + 1, remainingNodes.size)
+    }
+    return if (normalizedNodes == messageNodes) this else copy(messageNodes = normalizedNodes)
 }
 
 /** 有工具调用在等待用户审批：这一轮还没结束，排队的消息要等审批完成后再发 */

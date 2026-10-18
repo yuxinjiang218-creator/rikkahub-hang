@@ -260,6 +260,7 @@
   <string name="chat_page_clear_search_results">Clear Search Results</string>
   <string name="chat_page_clear_search_results_confirm">Clear web search and chat history search results from this conversation? The search calls will remain, but their results will be removed.</string>
   <string name="chat_page_compress_regenerate">Regenerate summary</string>
+  <string name="chat_page_compress_regenerate_confirm">Regenerate this summary? The current summary will be replaced.</string>
   <string name="chat_page_compress_regenerating">Regenerating summary…</string>
   <string name="chat_page_compressing">Compressing...</string>
   <string name="chat_page_conversation_system_prompt">Conversation System Prompt</string>
@@ -1540,7 +1541,7 @@
   <string name="search_picker_status_off">Turned off</string>
   <string name="search_picker_off_description">The model answers only from what it already knows and will not access the web.</string>
   <string name="chat_page_compress_checkpoint_title">Earlier messages compressed into a summary</string>
-  <string name="chat_page_compress_checkpoint_hint">The kept recent messages remain before this summary. Older messages are replaced by it. Delete the summary to return to the previous summary, or the uncompressed history if there is no earlier summary. Normal context limits still apply.</string>
+  <string name="chat_page_compress_checkpoint_hint">Older messages remain visible above this line, but this summary replaces them when sent to the model. Kept recent messages appear after the summary, followed by newer messages. Delete the summary to return to the previous summary, or the uncompressed history if there is no earlier summary. Normal context limits still apply.</string>
   <string name="chat_page_compress_blocked_generating">Stop the generation before compressing the context</string>
   <string name="chat_page_compress_nothing_to_compress">No new messages to compress since the last summary</string>
   <string name="chat_page_compress_handle_pending_tools">Handle the pending tool calls before compressing</string>

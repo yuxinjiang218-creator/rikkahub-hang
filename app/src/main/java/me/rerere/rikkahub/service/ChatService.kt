@@ -69,6 +69,7 @@ import me.rerere.rikkahub.data.model.getStoredAssistantOf
 import me.rerere.rikkahub.data.model.insertContextCheckpoint
 import me.rerere.rikkahub.data.model.isAwaitingToolApproval
 import me.rerere.rikkahub.data.model.localFileUrls
+import me.rerere.rikkahub.data.model.normalizeContextCheckpointOrder
 import me.rerere.rikkahub.data.model.replaceUserRegexes
 import me.rerere.rikkahub.data.model.selectBranch
 import me.rerere.rikkahub.data.model.toMessageNode
@@ -210,7 +211,7 @@ class ChatService(
     /** 会话的最新内容：已加载的以内存为准，否则读数据库 */
     suspend fun getConversation(conversationId: Uuid): Conversation? =
         sessionManager.get(conversationId)?.takeIf { it.isInitialized }?.state?.value
-            ?: conversationRepo.getConversationById(conversationId)
+            ?: conversationRepo.getConversationById(conversationId)?.normalizeContextCheckpointOrder()
 
     fun getGenerationJobStateFlow(conversationId: Uuid): Flow<Job?> =
         sessionManager.getGenerationJobStateFlow(conversationId)
@@ -287,9 +288,11 @@ class ChatService(
     // 引入会话配置之前创建的会话没有固定配置，加载时按助手当前的值补上，之后不再随助手变化。
     private suspend fun loadConversation(conversationId: Uuid): Conversation? {
         val conversation = conversationRepo.getConversationById(conversationId) ?: return null
+        val normalized = conversation.normalizeContextCheckpointOrder()
+        if (normalized !== conversation) conversationRepo.updateConversation(normalized)
         // settingsFlow 在启动初期还是占位值，固定配置必须基于真实设置
-        val bound = conversation.bindConfig(settingsStore.awaitLoaded())
-        if (bound !== conversation) conversationRepo.updateConversationConfig(bound)
+        val bound = normalized.bindConfig(settingsStore.awaitLoaded())
+        if (bound !== normalized) conversationRepo.updateConversationConfig(bound)
         return bound
     }
 
@@ -803,9 +806,16 @@ class ChatService(
 
             val conversation = session.state.value
             val nodes = conversation.messageNodes
-            // 上一个检查点之后没有新消息，就没什么可压缩的
             val checkpointIndex = nodes.indexOfLast { it.currentMessage.isContextCheckpoint }
-            if (checkpointIndex == nodes.lastIndex) {
+            val previousCheckpoint = nodes.getOrNull(checkpointIndex)?.currentMessage
+            val previouslyRetainedIds = previousCheckpoint
+                ?.contextCheckpointRetainedMessageIds
+                ?.toSet()
+                .orEmpty()
+            val hasNewMessages = nodes
+                .drop(checkpointIndex + 1)
+                .any { it.currentMessage.id !in previouslyRetainedIds }
+            if (!hasNewMessages) {
                 throw IllegalStateException(context.getString(R.string.chat_page_compress_nothing_to_compress))
             }
             // 未完成的工具调用没有结果，请求会被服务端拒绝；压到检查点之前也再不会执行。
@@ -845,9 +855,10 @@ class ChatService(
                 reuseChatModelPrefix = usesChatModel,
             )
 
-            // 原消息原样保留，摘要插在压缩时的最后一条消息之后。摘要生成期间对话可能已变化，
-            // 因此按节点定位插入到最新状态。
-            val anchorNodeId = nodes.lastOrNull()?.id
+            // 摘要插在最后一条被压缩的消息之后，保留的最近消息随即移动到摘要之后。
+            // 摘要生成期间对话可能已变化，因此仍按节点定位插入到最新状态。
+            val sourceMessageIds = sourceMessages.map { it.id }
+            val anchorNodeId = nodes.lastOrNull { it.currentMessage.id in sourceMessageIds }?.id
                 ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_not_enough_messages))
             session.update { latest ->
                 check(!session.isGenerating) { context.getString(R.string.chat_page_compress_blocked_generating) }
@@ -855,7 +866,7 @@ class ChatService(
                     afterNodeId = anchorNodeId,
                     summary = summary,
                     keepRecentMessages = retainedMessages.size,
-                    sourceMessageIds = sourceMessages.map { it.id },
+                    sourceMessageIds = sourceMessageIds,
                     additionalPrompt = additionalPrompt,
                     prompt = compressPrompt,
                     promptTemplate = settings.compressPrompt,
@@ -895,7 +906,7 @@ class ChatService(
             val canUseStoredRetainedMessages = if (storedRetainedIds.isEmpty()) {
                 checkpoint.contextCheckpointKeepRecentMessages == 0
             } else {
-                storedRetainedIds.all { id -> effectiveMessagesBeforeCheckpoint.any { it.id == id } }
+                storedRetainedIds.all { id -> id in messagesById }
             }
             val retainedMessageIds = if (canUseStoredRetainedMessages) {
                 storedRetainedIds

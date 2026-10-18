@@ -192,16 +192,17 @@ class MessageContextLimitTest {
     }
 
     @Test
-    fun `limitContext keeps retained messages before the checkpoint`() {
+    fun `limitContext keeps retained messages after the checkpoint`() {
         val messages = createTestMessages(6)
         val checkpoint = messages[3].copy(
             isContextCheckpoint = true,
             contextCheckpointRetainedMessageIds = listOf(messages[1].id, messages[2].id),
         )
-        val withCheckpoint = messages.subList(0, 3) + checkpoint + messages.subList(4, 6)
+        val withCheckpoint = messages.subList(0, 1) + checkpoint +
+            listOf(messages[1], messages[2]) + messages.subList(4, 6)
 
         assertEquals(
-            listOf(messages[1], messages[2], checkpoint, messages[4], messages[5]),
+            listOf(checkpoint, messages[1], messages[2], messages[4], messages[5]),
             withCheckpoint.limitContext(0),
         )
     }
@@ -213,11 +214,65 @@ class MessageContextLimitTest {
             isContextCheckpoint = true,
             contextCheckpointRetainedMessageIds = listOf(messages[20].id, messages[21].id),
         )
-        val withCheckpoint = messages.subList(0, 24) + checkpoint + messages.subList(25, 30)
+        val withCheckpoint = messages.subList(0, 20) + checkpoint +
+            messages.subList(20, 22) + messages.subList(25, 30)
 
         assertEquals(
-            listOf(messages[20], messages[21], checkpoint) + messages.subList(25, 30),
+            listOf(checkpoint, messages[20], messages[21]) + messages.subList(25, 30),
             withCheckpoint.checkpointContext(),
+        )
+    }
+
+    @Test
+    fun `checkpointContext normalizes legacy checkpoints with retained messages before them`() {
+        val messages = createTestMessages(6)
+        val checkpoint = messages[5].copy(
+            isContextCheckpoint = true,
+            contextCheckpointKeepRecentMessages = 2,
+            contextCheckpointRetainedMessageIds = listOf(messages[3].id, messages[4].id),
+        )
+        val legacyLayout = messages.subList(0, 5) + checkpoint
+
+        assertEquals(
+            listOf(checkpoint, messages[3], messages[4]),
+            legacyLayout.checkpointContext(),
+        )
+        assertEquals(
+            listOf(checkpoint, messages[3], messages[4]),
+            legacyLayout.limitContext(0),
+        )
+    }
+
+    @Test
+    fun `checkpointContext does not replace deleted retained messages with summarized messages`() {
+        val messages = createTestMessages(6)
+        val checkpoint = messages[5].copy(
+            isContextCheckpoint = true,
+            contextCheckpointKeepRecentMessages = 2,
+            contextCheckpointRetainedMessageIds = listOf(messages[3].id, messages[4].id),
+        )
+        val legacyLayoutAfterDeletion = messages.subList(0, 4) + checkpoint
+
+        assertEquals(
+            listOf(checkpoint, messages[3]),
+            legacyLayoutAfterDeletion.checkpointContext(),
+        )
+    }
+
+    @Test
+    fun `limitContext limits new messages separately from retained messages`() {
+        val messages = createTestMessages(7)
+        val checkpoint = messages[2].copy(
+            isContextCheckpoint = true,
+            contextCheckpointKeepRecentMessages = 2,
+            contextCheckpointRetainedMessageIds = listOf(messages[3].id, messages[4].id),
+        )
+        val withCheckpoint = messages.subList(0, 2) + checkpoint +
+            messages.subList(3, 5) + messages.subList(5, 7)
+
+        assertEquals(
+            listOf(checkpoint, messages[3], messages[4], messages[6]),
+            withCheckpoint.limitContext(1),
         )
     }
 

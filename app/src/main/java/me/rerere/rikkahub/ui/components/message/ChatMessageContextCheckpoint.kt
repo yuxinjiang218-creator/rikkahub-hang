@@ -35,6 +35,7 @@ import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.Package01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.ui.components.RikkaConfirmDialog
 
 /**
  * 压缩检查点：分隔线上方的消息仍可查看，但不再发送给模型，由这里的摘要代替。
@@ -50,6 +51,7 @@ fun ChatMessageContextCheckpoint(
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    var showRegenerateConfirm by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -110,7 +112,10 @@ fun ChatMessageContextCheckpoint(
                         horizontalArrangement = Arrangement.End,
                     ) {
                         if (onRegenerate != null) {
-                            TextButton(onClick = onRegenerate, enabled = !isRegenerating) {
+                            TextButton(
+                                onClick = { showRegenerateConfirm = true },
+                                enabled = !isRegenerating,
+                            ) {
                                 Text(
                                     stringResource(
                                         if (isRegenerating) R.string.chat_page_compress_regenerating
@@ -133,4 +138,17 @@ fun ChatMessageContextCheckpoint(
             }
         }
     }
+
+    RikkaConfirmDialog(
+        show = showRegenerateConfirm,
+        title = stringResource(R.string.chat_page_compress_regenerate),
+        confirmText = stringResource(R.string.confirm),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            showRegenerateConfirm = false
+            onRegenerate?.invoke()
+        },
+        onDismiss = { showRegenerateConfirm = false },
+        text = { Text(stringResource(R.string.chat_page_compress_regenerate_confirm)) },
+    )
 }

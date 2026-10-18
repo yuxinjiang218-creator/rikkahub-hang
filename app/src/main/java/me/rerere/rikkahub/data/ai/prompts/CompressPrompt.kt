@@ -69,7 +69,7 @@ internal fun buildCompressPrompt(
         if (additionalPrompt.isNotBlank()) {
             appendLine("Additional instructions from user: $additionalPrompt")
         }
-        append("Keep recent visible messages outside compression: $keepRecentMessages")
+        append("Keep recent visible messages after the summary and before newer messages; exclude them from compression: $keepRecentMessages")
     }
     val replacements = mapOf(
         "locale" to locale,
@@ -86,7 +86,7 @@ internal fun buildCompressPrompt(
     if ("{additional_context}" !in template) {
         appendLine()
         appendLine()
-        append("本次保留的最近 $keepRecentMessages 条消息会原样放在摘要之前，因此它们没有包含在本次待总结内容中。")
+        append("本次保留的最近 $keepRecentMessages 条消息会原样放在摘要之后，因此它们没有包含在本次待总结内容中。")
         if (additionalPrompt.isNotBlank()) {
             appendLine()
             appendLine()
