@@ -115,6 +115,12 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      - name: Gradle Debug Unit Tests
+        if: ${{ inputs.debug_only == true }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :ai:testDebugUnitTest :app:testDebugUnitTest
+
       # 把 APK 直接发布为 Prerelease，用户点链接即可下载单个 apk，无需登录、无需解压
       - name: Publish nightly prerelease
         uses: softprops/action-gh-release@v2
