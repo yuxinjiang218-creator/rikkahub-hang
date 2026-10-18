@@ -188,7 +188,9 @@ private fun historySearchTool(
                         put("roles_hit", buildJsonArray {
                             group.rolesHit.forEach { add(JsonPrimitive(it.name.lowercase())) }
                         })
-                        put("top_refs", buildJsonArray { group.topResults.forEach { add(historySearchResultRef(it)) } })
+                        put("top_refs", buildJsonArray {
+                            group.topResults.forEach { add(JsonPrimitive(historySearchResultRef(it))) }
+                        })
                         put("top_snippets", buildJsonArray { group.topResults.forEach { result -> add(buildJsonObject {
                             put("ref", historySearchResultRef(result))
                             put("message_role", result.role.name.lowercase())
