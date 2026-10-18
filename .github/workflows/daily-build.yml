@@ -6,6 +6,12 @@ on:
     - cron: '0 9,18 * * *'
   # 也支持手动触发
   workflow_dispatch:
+    inputs:
+      debug_only:
+        description: '只构建 Debug APK，不读取签名和 Firebase 密钥'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   # 检查过去 24 小时内是否有新提交，没有则跳过构建，避免重复打包
@@ -81,6 +87,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
       - name: Prepare build files
+        if: ${{ inputs.debug_only != true }}
         run: |
           # 解码base64编码的keystore文件
           echo "${{ secrets.KEY_BASE64 }}" | base64 -d > app/app.key
@@ -91,15 +98,58 @@ jobs:
           # 写入Google Services配置
           echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
 
-      - name: Gradle Build
+      - name: Prepare debug build files
+        if: ${{ inputs.debug_only == true }}
+        run: |
+          cat > app/google-services.json <<'EOF'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "build-only-placeholder",
+              "storage_bucket": "build-only-placeholder.invalid"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                  "android_client_info": {
+                    "package_name": "me.rerere.rikkahub.hang"
+                  }
+                },
+                "api_key": [{ "current_key": "build-only-placeholder" }],
+                "services": {}
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000001",
+                  "android_client_info": {
+                    "package_name": "me.rerere.rikkahub.hang.debug"
+                  }
+                },
+                "api_key": [{ "current_key": "build-only-placeholder" }],
+                "services": {}
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+
+      - name: Gradle Release Build
+        if: ${{ inputs.debug_only != true }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease
 
+      - name: Gradle Debug Build
+        if: ${{ inputs.debug_only == true }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
       # 把 APK 直接发布为 Prerelease，用户点链接即可下载单个 apk，无需登录、无需解压
       - name: Publish nightly prerelease
         uses: softprops/action-gh-release@v2
-        if: success()
+        if: ${{ success() && inputs.debug_only != true }}
         with:
           tag_name: nightly            # 固定 tag，每晚覆盖同一个「最新每日构建」
           name: Nightly Build
@@ -109,3 +159,11 @@ jobs:
 
             > ⚠️ 开发版本，可能不稳定，仅供测试。
           files: app/build/outputs/apk/release/*.apk
+
+      - name: Upload debug APKs
+        if: ${{ success() && inputs.debug_only == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-debug-apks
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
