@@ -64,6 +64,32 @@ class Migration_30_31_Test {
         }
     }
 
+    @Test
+    fun addsMissingWorkspaceShellCompatibilityColumnAndPreservesWorkspace() {
+        helper.createDatabase(TEST_DB, 30).use { db ->
+            db.execSQL("ALTER TABLE `workspaces` DROP COLUMN `shell_compatibility_mode`")
+            val values = ContentValues().apply {
+                put("id", "workspace")
+                put("name", "kept")
+                put("root", "/workspace")
+                put("shell_status", "DISABLED")
+                put("created_at", 1L)
+                put("updated_at", 2L)
+                put("tool_approvals", "{}")
+            }
+            db.insert("workspaces", SQLiteDatabase.CONFLICT_ABORT, values)
+        }
+
+        helper.runMigrationsAndValidate(TEST_DB, 31, true, Migration_30_31).use { db ->
+            db.query("SELECT name, shell_compatibility_mode FROM workspaces").use { cursor ->
+                assertEquals(1, cursor.count)
+                cursor.moveToFirst()
+                assertEquals("kept", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+            }
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertConversation() {
         val values = ContentValues().apply {
             put("id", "conversation")

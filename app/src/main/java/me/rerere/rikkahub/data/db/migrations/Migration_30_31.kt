@@ -8,23 +8,33 @@ private const val COMPRESSION_STATE_DEFAULT =
 
 val Migration_30_31 = object : Migration(30, 31) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        val columns = db.query("PRAGMA table_info(`ConversationEntity`)").use { cursor ->
-            buildSet {
-                val nameIndex = cursor.getColumnIndexOrThrow("name")
-                while (cursor.moveToNext()) add(cursor.getString(nameIndex))
-            }
-        }
+        val conversationColumns = db.columnsIn("ConversationEntity")
 
-        if ("compression_state" !in columns) {
+        if ("compression_state" !in conversationColumns) {
             db.execSQL(
                 "ALTER TABLE `ConversationEntity` ADD COLUMN `compression_state` TEXT NOT NULL " +
                     "DEFAULT '$COMPRESSION_STATE_DEFAULT'"
             )
         }
-        if ("compression_events" !in columns) {
+        if ("compression_events" !in conversationColumns) {
             db.execSQL(
                 "ALTER TABLE `ConversationEntity` ADD COLUMN `compression_events` TEXT NOT NULL DEFAULT '[]'"
             )
         }
+
+        if ("shell_compatibility_mode" !in db.columnsIn("workspaces")) {
+            db.execSQL(
+                "ALTER TABLE `workspaces` ADD COLUMN `shell_compatibility_mode` " +
+                    "INTEGER NOT NULL DEFAULT 0"
+            )
+        }
     }
 }
+
+private fun SupportSQLiteDatabase.columnsIn(tableName: String): Set<String> =
+    query("PRAGMA table_info(`$tableName`)").use { cursor ->
+        buildSet {
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+        }
+    }
