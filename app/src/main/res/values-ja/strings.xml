@@ -253,6 +253,7 @@
   <string name="chat_page_compress_additional_prompt_hint">保持または重点的に扱う内容を指定</string>
   <string name="chat_page_compress_context">履歴を圧縮</string>
   <string name="chat_page_compress_context_desc">会話を要約して圧縮し、トークンを節約します</string>
+  <string name="chat_page_compress_keep_recent">保持する最近のメッセージ数</string>
   <string name="chat_page_compress_context_title">会話履歴を圧縮</string>
   <string name="chat_page_compressing">圧縮中…</string>
   <string name="chat_page_conversation_system_prompt">会話システムプロンプト</string>
@@ -729,6 +730,10 @@
   <string name="setting_model_page_ocr_model">OCRモデル</string>
   <string name="setting_model_page_ocr_model_desc">画像の光学文字認識に使用されるモデル</string>
   <string name="setting_model_page_ocr_prompt_vars">変数: 画像データ: {images}</string>
+  <string name="setting_model_page_compress_model">圧縮モデル</string>
+  <string name="setting_model_page_compress_model_desc">要約の生成に使用するモデル。空欄の場合はチャットモデルを使用します</string>
+  <string name="setting_model_page_use_chat_model">チャットモデルを使用</string>
+  <string name="setting_model_page_compress_prompt_vars">変数: 言語: {locale}</string>
   <string name="setting_model_page_prompt">プロンプト</string>
   <string name="setting_model_page_reset_to_default">デフォルトにリセット</string>
   <string name="setting_model_page_suggestion_model">チャット提案モデル</string>
@@ -1096,6 +1101,7 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="setting_model_page_prompt_title">タイトル生成</string>
   <string name="setting_model_page_prompt_suggestion">チャット返信の提案</string>
   <string name="setting_model_page_prompt_ocr">OCR認識</string>
+  <string name="setting_model_page_prompt_compress">会話の圧縮</string>
   <string name="setting_display_page_bubble_opacity_title">吹き出しの不透明度</string>
   <string name="setting_provider_page_include_history_reasoning">履歴の思考過程を送信</string>
   <string name="setting_model_page_fast_model">高速モデル</string>

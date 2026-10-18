@@ -253,6 +253,7 @@
   <string name="chat_page_compress_additional_prompt_hint">보존하거나 집중할 내용을 지정하세요</string>
   <string name="chat_page_compress_context">기록 압축</string>
   <string name="chat_page_compress_context_desc">대화를 요약하여 토큰을 절약하세요</string>
+  <string name="chat_page_compress_keep_recent">유지할 최근 메시지 수</string>
   <string name="chat_page_compress_context_title">대화 기록 압축</string>
   <string name="chat_page_compressing">압축 중...</string>
   <string name="chat_page_conversation_system_prompt">대화 시스템 프롬프트</string>
@@ -729,6 +730,10 @@
   <string name="setting_model_page_ocr_model">OCR 모델</string>
   <string name="setting_model_page_ocr_model_desc">이미지에서 광학 문자 인식에 사용되는 모델</string>
   <string name="setting_model_page_ocr_prompt_vars">변수: 이미지 데이터: {images}</string>
+  <string name="setting_model_page_compress_model">압축 모델</string>
+  <string name="setting_model_page_compress_model_desc">요약 생성에 사용할 모델입니다. 비워 두면 채팅 모델을 사용합니다</string>
+  <string name="setting_model_page_use_chat_model">채팅 모델 사용</string>
+  <string name="setting_model_page_compress_prompt_vars">변수: 언어: {locale}</string>
   <string name="setting_model_page_prompt">프롬프트</string>
   <string name="setting_model_page_reset_to_default">기본값으로 재설정</string>
   <string name="setting_model_page_suggestion_model">채팅 제안 모델</string>
@@ -1096,6 +1101,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="setting_model_page_prompt_title">제목 생성</string>
   <string name="setting_model_page_prompt_suggestion">채팅 답변 제안</string>
   <string name="setting_model_page_prompt_ocr">OCR 인식</string>
+  <string name="setting_model_page_prompt_compress">대화 압축</string>
   <string name="setting_display_page_bubble_opacity_title">버블 불투명도</string>
   <string name="setting_provider_page_include_history_reasoning">이전 추론 내용 전송</string>
   <string name="setting_model_page_fast_model">빠른 모델</string>
