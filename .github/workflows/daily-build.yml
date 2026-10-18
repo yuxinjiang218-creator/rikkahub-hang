@@ -86,6 +86,15 @@ jobs:
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
+      - name: Test Room 30 to 31 migration
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.db.migrations.Migration_30_31_Test
+
       - name: Prepare build files
         if: ${{ inputs.debug_only != true }}
         run: |
@@ -100,6 +109,14 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease
+
+      - name: Upload generated Room schema
+        if: ${{ success() && inputs.debug_only != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schema-${{ github.sha }}
+          path: app/schemas/me.rerere.rikkahub.data.db.AppDatabase/31.json
+          if-no-files-found: error
 
       - name: Gradle Debug Build
         if: ${{ inputs.debug_only == true }}
