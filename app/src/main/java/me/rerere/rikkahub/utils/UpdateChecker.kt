@@ -21,7 +21,7 @@ import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val API_URL = "https://updates.rikka-ai.com/"
+private const val API_URL = "https://yuxinjiang218.cloud/rikka/latest.json"
 
 class UpdateChecker(
     private val client: OkHttpClient,
@@ -51,7 +51,7 @@ class UpdateChecker(
                             .build()
                     ).await()
                     if (response.isSuccessful) {
-                        json.decodeFromString<UpdateInfo>(response.body.string())
+                        json.decodeFromString<ServerUpdateManifest>(response.body.string()).toUpdateInfo()
                     } else {
                         throw Exception("Failed to fetch update info")
                     }
@@ -104,6 +104,37 @@ data class UpdateInfo(
     val changelog: String,
     val downloads: List<UpdateDownload>
 )
+
+@Serializable
+private data class ServerUpdateManifest(
+    val version: String,
+    val name: String = "",
+    @kotlinx.serialization.SerialName("published_at") val publishedAt: String = "1970-01-01T00:00:00Z",
+    val changelog: String = "",
+    val downloads: List<ServerUpdateAsset> = emptyList(),
+)
+
+@Serializable
+private data class ServerUpdateAsset(
+    val name: String,
+    val url: String,
+    val size: Long,
+)
+
+private fun ServerUpdateManifest.toUpdateInfo(): UpdateInfo {
+    val downloads = downloads.filter { it.name.endsWith(".apk", ignoreCase = true) }.map {
+        UpdateDownload(it.name, it.url, formatSize(it.size))
+    }
+    require(downloads.isNotEmpty()) { "Update manifest has no APK downloads" }
+    return UpdateInfo(version, publishedAt, changelog.ifBlank { "No changelog." }, downloads)
+}
+
+private fun formatSize(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format("%.1f KB", kb)
+    return String.format("%.1f MB", kb / 1024.0)
+}
 
 /**
  * 版本号值类，封装版本号字符串并提供比较功能

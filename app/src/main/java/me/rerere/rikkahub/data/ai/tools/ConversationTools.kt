@@ -68,6 +68,66 @@ fun createConversationTools(
         }
     ),
     conversationSearchTool { query -> conversationRepo.searchMessages(query, MessageSearchSort.RELEVANCE) },
+    conversationContextTool(conversationRepo),
+)
+
+private fun conversationContextTool(conversationRepo: ConversationRepository) = Tool(
+    name = "read_chat_context",
+    description = "Read a small window of user and assistant messages around a message in a conversation. Use the conversation_id from conversation_search.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("conversation_id", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Conversation id returned by conversation_search")
+                })
+                put("position", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Optional zero-based message position")
+                })
+                put("message_id", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Optional message_id returned by conversation_search")
+                })
+                put("before", buildJsonObject { put("type", "integer") })
+                put("after", buildJsonObject { put("type", "integer") })
+            },
+            required = listOf("conversation_id"),
+        )
+    },
+    execute = {
+        val args = it.jsonObject
+        val id = args["conversation_id"]?.jsonPrimitive?.contentOrNull
+            ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+            ?: error("conversation_id must be a valid UUID")
+        val conversation = conversationRepo.getConversationById(id) ?: error("conversation not found")
+        val messages = conversation.currentMessages.filter {
+            it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT
+        }
+        val messageId = args["message_id"]?.jsonPrimitive?.contentOrNull
+            ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+        val requestedPosition = args["position"]?.jsonPrimitive?.intOrNull
+            ?: messageId?.let { id -> messages.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+            ?: error("position or message_id is required")
+        val position = requestedPosition.coerceIn(0, messages.lastIndex.coerceAtLeast(0))
+        val before = (args["before"]?.jsonPrimitive?.intOrNull ?: 1).coerceIn(0, 3)
+        val after = (args["after"]?.jsonPrimitive?.intOrNull ?: 3).coerceIn(0, 6)
+        val start = (position - before).coerceAtLeast(0)
+        val end = (position + after + 1).coerceAtMost(messages.size)
+        val payload = buildJsonObject {
+            put("conversation_id", conversation.id.toString())
+            put("messages", buildJsonArray {
+                messages.subList(start, end).forEachIndexed { index, message ->
+                    add(buildJsonObject {
+                        put("position", start + index)
+                        put("role", message.role.name.lowercase())
+                        put("text", message.toText().take(12_000))
+                    })
+                }
+            })
+        }
+        listOf(UIMessagePart.Text(payload.toString()))
+    },
 )
 
 private fun conversationSearchTool(search: suspend (query: String) -> List<MessageSearchResult>) = Tool(
@@ -104,6 +164,8 @@ private fun conversationSearchTool(search: suspend (query: String) -> List<Messa
             results.forEach { result ->
                 add(buildJsonObject {
                     put("conversation_id", result.conversationId)
+                    put("node_id", result.nodeId)
+                    put("message_id", result.messageId)
                     put("title", result.title.ifBlank { "Untitled" })
                     put("snippet", result.snippet)
                     put("date", result.updateAt.toLocalDate())
