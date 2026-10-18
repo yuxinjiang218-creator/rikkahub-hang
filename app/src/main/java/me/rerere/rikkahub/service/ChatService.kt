@@ -34,6 +34,7 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.checkpointContext
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
@@ -48,6 +49,7 @@ import me.rerere.rikkahub.data.ai.prompts.buildCompressPrompt
 import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
 import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
@@ -75,6 +77,8 @@ import me.rerere.rikkahub.data.model.withToolApproval
 import me.rerere.rikkahub.data.model.withTranslation
 import me.rerere.rikkahub.data.model.withoutConversationFields
 import me.rerere.rikkahub.data.model.withoutUnresumableToolCalls
+import me.rerere.ai.ui.limitContext
+import me.rerere.ai.ui.takeLastContextMessages
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.web.BadRequestException
@@ -790,6 +794,7 @@ class ChatService(
     suspend fun compressConversation(
         conversationId: Uuid,
         additionalPrompt: String,
+        keepRecentMessages: Int = 0,
     ): Result<Unit> = runCatching {
         withLoadedSession<Unit>(conversationId) { session ->
             // 生成中的回复还没写完，压缩不到它，检查点也不能插到它前面
@@ -807,29 +812,168 @@ class ChatService(
                 node.currentMessage.getTools().any { it.isPending || it.canResumeExecution }
             }) { context.getString(R.string.chat_page_compress_handle_pending_tools) }
 
-            // 必须和对话用同一个模型、同一套请求组装，才能命中提示词缓存
-            val turn = requestFactory.createContext(settingsStore.awaitLoaded(), conversation)
+            val settings = settingsStore.awaitLoaded()
+            val turn = requestFactory.createContext(settings, conversation)
+            val effectiveContext = conversation.currentMessages
+                .checkpointContext()
+                .limitContext(turn.assistant.contextMessageLimit)
+            val normalizedKeepRecent = keepRecentMessages.coerceAtLeast(0)
+            val retainedMessages = effectiveContext
+                .filterNot { it.isContextCheckpoint }
+                .takeLastContextMessages(normalizedKeepRecent)
+            val retainedMessageIds = retainedMessages.map { it.id }.toSet()
+            val sourceMessages = effectiveContext.filterNot { it.id in retainedMessageIds }
+            check(sourceMessages.any { !it.isContextCheckpoint }) {
+                context.getString(R.string.chat_page_compress_not_enough_messages)
+            }
+            val configuredCompressionModel = settings.compressModelId?.let { settings.findModelById(it) }
+            val usesChatModel = configuredCompressionModel == null
+            val compressionModel = configuredCompressionModel ?: turn.model
+            val compressPrompt = buildCompressPrompt(
+                prompt = settings.compressPrompt,
+                additionalPrompt = additionalPrompt,
+                locale = Locale.getDefault().displayName,
+                keepRecentMessages = retainedMessages.size,
+                sourceMessages = sourceMessages,
+            )
             val summary = requestFactory.generateCompressionSummary(
                 turn = turn,
-                messages = conversation.currentMessages,
-                compressPrompt = buildCompressPrompt(
-                    additionalPrompt = additionalPrompt,
-                    locale = Locale.getDefault().displayName,
-                ),
+                messages = sourceMessages,
+                compressPrompt = compressPrompt,
+                compressionModel = compressionModel,
+                reuseChatModelPrefix = usesChatModel,
             )
 
             // 原消息原样保留，摘要插在压缩时的最后一条消息之后。摘要生成期间对话可能已变化，
             // 因此按节点定位插入到最新状态。
+            val anchorNodeId = nodes.lastOrNull()?.id
+                ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_not_enough_messages))
             session.update { latest ->
                 check(!session.isGenerating) { context.getString(R.string.chat_page_compress_blocked_generating) }
                 val updated = latest.insertContextCheckpoint(
-                    afterNodeId = nodes.last().id,
+                    afterNodeId = anchorNodeId,
                     summary = summary,
+                    keepRecentMessages = retainedMessages.size,
+                    sourceMessageIds = sourceMessages.map { it.id },
+                    additionalPrompt = additionalPrompt,
+                    prompt = compressPrompt,
+                    promptTemplate = settings.compressPrompt,
+                    modelId = configuredCompressionModel?.id,
+                    usesChatModel = usesChatModel,
+                    retainedMessageIds = retainedMessages.map { it.id },
                 ) ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
                 updated.copy(chatSuggestions = emptyList())
             }
             session.flush()
         }
+    }.onFailure {
+        if (it is CancellationException) throw it
+    }
+
+    /** 仅重新生成最近一个压缩检查点，输入边界和模型设置沿用该检查点创建时的快照。 */
+    suspend fun regenerateLatestCompression(conversationId: Uuid): Result<Unit> = runCatching {
+        withLoadedSession<Unit>(conversationId) { session ->
+            check(!session.isGenerating) { context.getString(R.string.chat_page_compress_blocked_generating) }
+            val conversation = session.state.value
+            val checkpointNodeIndex = conversation.messageNodes.indexOfLast {
+                it.currentMessage.isContextCheckpoint
+            }
+            check(checkpointNodeIndex >= 0) {
+                context.getString(R.string.chat_page_compress_no_summary)
+            }
+            val checkpointNode = conversation.messageNodes[checkpointNodeIndex]
+            val checkpoint = checkpointNode.currentMessage
+            val currentMessages = conversation.currentMessages
+            val messagesById = currentMessages.associateBy { it.id }
+            val settings = settingsStore.awaitLoaded()
+            val turn = requestFactory.createContext(settings, conversation)
+            val effectiveMessagesBeforeCheckpoint = currentMessages.subList(0, checkpointNodeIndex)
+                .checkpointContext()
+                .limitContext(turn.assistant.contextMessageLimit)
+            val storedRetainedIds = checkpoint.contextCheckpointRetainedMessageIds.toSet()
+            val canUseStoredRetainedMessages = if (storedRetainedIds.isEmpty()) {
+                checkpoint.contextCheckpointKeepRecentMessages == 0
+            } else {
+                storedRetainedIds.all { id -> effectiveMessagesBeforeCheckpoint.any { it.id == id } }
+            }
+            val retainedMessageIds = if (canUseStoredRetainedMessages) {
+                storedRetainedIds
+            } else {
+                effectiveMessagesBeforeCheckpoint
+                    .filterNot { it.isContextCheckpoint }
+                    .takeLastContextMessages(checkpoint.contextCheckpointKeepRecentMessages)
+                    .map { it.id }
+                    .toSet()
+            }
+            val hasStoredSourceBoundary = checkpoint.contextCheckpointSourceMessageIds.isNotEmpty() &&
+                checkpoint.contextCheckpointSourceMessageIds.all { id -> id in messagesById } &&
+                (checkpoint.contextCheckpointRetainedMessageIds.isEmpty() || canUseStoredRetainedMessages)
+            val sourceMessages = if (hasStoredSourceBoundary) {
+                checkpoint.contextCheckpointSourceMessageIds.map { id ->
+                    messagesById[id]
+                        ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
+                }
+            } else {
+                effectiveMessagesBeforeCheckpoint.filterNot { it.id in retainedMessageIds }
+            }
+            check(sourceMessages.any { !it.isContextCheckpoint }) {
+                context.getString(R.string.chat_page_compress_not_enough_messages)
+            }
+
+            val compressionModel = if (checkpoint.contextCheckpointUsesChatModel) {
+                turn.model
+            } else {
+                checkpoint.contextCheckpointModelId
+                    ?.let { settings.findModelById(it) }
+                    ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_model_missing))
+            }
+            val promptTemplate = checkpoint.contextCheckpointPromptTemplate.ifBlank { settings.compressPrompt }
+            val compressPrompt = if (
+                hasStoredSourceBoundary && checkpoint.contextCheckpointPrompt.isNotBlank()
+            ) {
+                checkpoint.contextCheckpointPrompt
+            } else {
+                buildCompressPrompt(
+                    prompt = promptTemplate,
+                    additionalPrompt = checkpoint.contextCheckpointAdditionalPrompt,
+                    locale = Locale.getDefault().displayName,
+                    keepRecentMessages = retainedMessageIds.size,
+                    sourceMessages = sourceMessages,
+                )
+            }
+            val summary = requestFactory.generateCompressionSummary(
+                turn = turn,
+                messages = sourceMessages,
+                compressPrompt = compressPrompt,
+                compressionModel = compressionModel,
+                reuseChatModelPrefix = checkpoint.contextCheckpointUsesChatModel,
+            )
+
+            session.update { latest ->
+                val node = latest.messageNodes.firstOrNull { it.id == checkpointNode.id }
+                    ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
+                check(node.currentMessage.id == checkpoint.id) {
+                    context.getString(R.string.chat_page_compress_conversation_changed)
+                }
+                val latestCheckpoint = node.messages.firstOrNull { it.id == checkpoint.id }
+                    ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
+                latest.copy(chatSuggestions = emptyList())
+                    .upsertMessage(
+                        node.id,
+                        latestCheckpoint.copy(
+                            parts = listOf(UIMessagePart.Text(summary)),
+                            contextCheckpointKeepRecentMessages = retainedMessageIds.size,
+                            contextCheckpointSourceMessageIds = sourceMessages.map { it.id },
+                            contextCheckpointRetainedMessageIds = retainedMessageIds.toList(),
+                            contextCheckpointPrompt = compressPrompt,
+                            contextCheckpointPromptTemplate = promptTemplate,
+                        ),
+                    )
+            }
+            session.flush()
+        }
+    }.onFailure {
+        if (it is CancellationException) throw it
     }
 
     // ---- 聊天页配置 ----

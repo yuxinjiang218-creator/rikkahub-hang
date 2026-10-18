@@ -94,7 +94,10 @@ class ChatRequestFactory(
     )
 
     /** 解析本轮的助手、模型、记忆和工具；MCP 服务名不合法时抛出 InvalidMcpServerNamesException */
-    suspend fun createContext(settings: Settings, conversation: Conversation): ChatTurnContext {
+    suspend fun createContext(
+        settings: Settings,
+        conversation: Conversation,
+    ): ChatTurnContext {
         // 模型、思考级别、搜索、工具等以会话上固定的配置为准
         val assistant = settings.getAssistantOf(conversation)
         val model = settings.getChatModelOf(conversation)
@@ -168,19 +171,54 @@ class ChatRequestFactory(
         turn: ChatTurnContext,
         messages: List<UIMessage>,
         compressPrompt: String,
+        compressionModel: Model = turn.model,
+        reuseChatModelPrefix: Boolean = true,
     ): String {
-        val (requestMessages, params) = buildStep(turn, messages)
-        // 压缩指令不经过输入转换器，模板转换器会把其中的花括号当成模板语法
-        val result = withRetry(
-            policy = turn.settings.retryPolicy(),
-            onRetry = { Log.w(TAG, "Compression request failed, retrying in ${it.delay}", it.cause) },
-        ) {
-            providerManager.getProviderByType(turn.providerSetting).generateText(
-                providerSetting = turn.providerSetting,
-                messages = requestMessages + UIMessage.user(compressPrompt),
-                // 助手的输出上限是给聊天回复定的，结构化摘要写不完会被截断；max_tokens 不属于请求前缀，改了不影响缓存
-                params = params.copy(maxTokens = null),
+        val result = if (reuseChatModelPrefix) {
+            // 同一个对话模型时复用完整聊天请求前缀，只把压缩指令作为末尾增量，保留缓存命中。
+            val (requestMessages, params) = buildStep(turn, messages, applyContextLimit = false)
+            withRetry(
+                policy = turn.settings.retryPolicy(),
+                onRetry = { Log.w(TAG, "Compression request failed, retrying in ${it.delay}", it.cause) },
+            ) {
+                providerManager.getProviderByType(turn.providerSetting).generateText(
+                    providerSetting = turn.providerSetting,
+                    messages = requestMessages + UIMessage.user(compressPrompt),
+                    params = params.copy(maxTokens = null),
+                )
+            }
+        } else {
+            // 独立压缩模型：压缩提示词作为它自己的 system prompt，历史作为待总结的对话内容。
+            val providerSetting = compressionModel.findProvider(turn.settings.providers)
+                ?: error("Compression model provider not found")
+            val provider = providerManager.getProviderByType(providerSetting)
+            val transformedMessages = messages.transforms(
+                transformers = inputTransformers,
+                context = context,
+                model = compressionModel,
+                assistant = turn.assistant,
+                settings = turn.settings,
+                processingStatus = MutableStateFlow(null),
+                workspaceCwd = turn.workspaceCwd,
             )
+            val params = TextGenerationParams(
+                model = compressionModel,
+                tools = emptyList(),
+                reasoningLevel = ReasoningLevel.AUTO,
+                customHeaders = compressionModel.customHeaders,
+                customBody = compressionModel.customBodies,
+                sessionId = turn.conversationId.toString(),
+            )
+            withRetry(
+                policy = turn.settings.retryPolicy(),
+                onRetry = { Log.w(TAG, "Compression request failed, retrying in ${it.delay}", it.cause) },
+            ) {
+                provider.generateText(
+                    providerSetting = providerSetting,
+                    messages = listOf(UIMessage.system(compressPrompt).copy(isSynthetic = true)) + transformedMessages,
+                    params = params,
+                )
+            }
         }
         val summary = result.message.compressionSummaryOrNull()
             ?: error(context.getString(R.string.chat_page_compress_tool_call_response))
@@ -192,6 +230,7 @@ class ChatRequestFactory(
         turn: ChatTurnContext,
         messages: List<UIMessage>,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
+        applyContextLimit: Boolean = true,
     ): StepRequest {
         val assistant = turn.assistant
         val requestMessages = buildList {
@@ -220,7 +259,7 @@ class ChatRequestFactory(
             if (system.isNotBlank()) {
                 add(UIMessage.system(prompt = system).copy(isSynthetic = true))
             }
-            addAll(messages.limitContext(assistant.contextMessageLimit))
+            addAll(if (applyContextLimit) messages.limitContext(assistant.contextMessageLimit) else messages)
         }.transforms(
             transformers = inputTransformers,
             context = context,

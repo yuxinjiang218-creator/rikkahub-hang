@@ -89,6 +89,15 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         plain(SUGGESTION_PROMPT, Settings::suggestionPrompt) { copy(suggestionPrompt = it) },
         uuid(OCR_MODEL, Settings::ocrModelId) { copy(ocrModelId = it) },
         plain(OCR_PROMPT, Settings::ocrPrompt) { copy(ocrPrompt = it) },
+        SettingsField(
+            COMPRESS_MODEL, Settings::compressModelId, { copy(compressModelId = it) },
+            encode = { it?.toString() },
+            decode = { Uuid.parse(it) },
+        ),
+        plain(COMPRESS_PROMPT, Settings::compressPrompt) { copy(compressPrompt = it) },
+        plain(MANUAL_COMPRESS_KEEP_RECENT_MESSAGES, Settings::manualCompressKeepRecentMessages) {
+            copy(manualCompressKeepRecentMessages = it.coerceAtLeast(0))
+        },
 
         // 提供商
         json(PROVIDERS, Settings::providers) { copy(providers = it) },

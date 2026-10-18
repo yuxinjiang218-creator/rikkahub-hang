@@ -34,6 +34,22 @@ data class UIMessage(
     val translation: String? = null,
     // 压缩检查点：此消息是它之前全部历史的摘要，组装请求时从最后一个检查点开始取
     val isContextCheckpoint: Boolean = false,
+    // 检查点前仍要原样保留给模型的最近消息数；旧数据为 0，保持上游检查点语义
+    val contextCheckpointKeepRecentMessages: Int = 0,
+    // 精确记录保留的原始消息，避免再次压缩时把上一个摘要当作“最近消息”计数
+    val contextCheckpointRetainedMessageIds: List<Uuid> = emptyList(),
+    // 生成该摘要时实际使用的消息 ID；用于重生成时复原同一批输入
+    val contextCheckpointSourceMessageIds: List<Uuid> = emptyList(),
+    // 用户在本次压缩时追加的说明；空值表示没有追加说明
+    val contextCheckpointAdditionalPrompt: String = "",
+    // 生成该摘要时使用的完整压缩提示词，保证之后重生成不受全局设置变更影响
+    val contextCheckpointPrompt: String = "",
+    // 未展开的原始提示词模板；输入上下文改变时可重新展开旧版占位符
+    val contextCheckpointPromptTemplate: String = "",
+    // 手动指定的压缩模型 ID；跟随对话模型时为空
+    val contextCheckpointModelId: Uuid? = null,
+    // true 表示跟随对话模型并复用其缓存前缀；false 表示用户手动选了压缩模型
+    val contextCheckpointUsesChatModel: Boolean = true,
     // 请求期间生成的内部消息；该标记仅在内存中使用
     @Transient
     val isSynthetic: Boolean = false,
@@ -175,7 +191,47 @@ private const val CONTEXT_KEEP_RATIO = 0.5f
 fun List<UIMessage>.limitContext(limit: Int): List<UIMessage> {
     val checkpointIndex = indexOfLast { it.isContextCheckpoint }
     if (checkpointIndex < 0) return limitMessageCount(limit)
-    return listOf(this[checkpointIndex]) + subList(checkpointIndex + 1, size).limitMessageCount(limit)
+    val checkpoint = this[checkpointIndex]
+    val retained = retainedContextBeforeCheckpoint(checkpointIndex, checkpoint)
+    return retained +
+        checkpoint +
+        subList(checkpointIndex + 1, size).limitMessageCount(limit)
+}
+
+/**
+ * 取出当前检查点语义下实际属于模型上下文的消息，不额外按助手上下文上限截断。
+ * 压缩请求用它先得到完整上下文，再排除本次要保留的最近消息。
+ */
+fun List<UIMessage>.checkpointContext(): List<UIMessage> {
+    val checkpointIndex = indexOfLast { it.isContextCheckpoint }
+    if (checkpointIndex < 0) return this
+    val checkpoint = this[checkpointIndex]
+    val retained = retainedContextBeforeCheckpoint(checkpointIndex, checkpoint)
+    return retained +
+        checkpoint +
+        subList(checkpointIndex + 1, size)
+}
+
+private fun List<UIMessage>.retainedContextBeforeCheckpoint(
+    checkpointIndex: Int,
+    checkpoint: UIMessage,
+): List<UIMessage> {
+    val beforeCheckpoint = subList(0, checkpointIndex)
+    val retainedIds = checkpoint.contextCheckpointRetainedMessageIds.toSet()
+    if (retainedIds.isNotEmpty()) {
+        val retained = beforeCheckpoint.filter { it.id in retainedIds }
+        if (retained.size == retainedIds.size) return retained
+    }
+    return beforeCheckpoint
+        .filterNot { it.isContextCheckpoint }
+        .takeLastContextMessages(checkpoint.contextCheckpointKeepRecentMessages)
+}
+
+/** 取最近的消息并向前对齐工具调用边界，避免把工具调用与结果拆开。 */
+fun List<UIMessage>.takeLastContextMessages(count: Int): List<UIMessage> {
+    if (count <= 0 || isEmpty()) return emptyList()
+    val start = alignContextStart((size - count).coerceAtLeast(0))
+    return subList(start, size)
 }
 
 /**

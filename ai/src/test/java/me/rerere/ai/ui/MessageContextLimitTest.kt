@@ -191,6 +191,36 @@ class MessageContextLimitTest {
         assertEquals(messages.subList(24, 30), messages.limitContext(10))
     }
 
+    @Test
+    fun `limitContext keeps retained messages before the checkpoint`() {
+        val messages = createTestMessages(6)
+        val checkpoint = messages[3].copy(
+            isContextCheckpoint = true,
+            contextCheckpointRetainedMessageIds = listOf(messages[1].id, messages[2].id),
+        )
+        val withCheckpoint = messages.subList(0, 3) + checkpoint + messages.subList(4, 6)
+
+        assertEquals(
+            listOf(messages[1], messages[2], checkpoint, messages[4], messages[5]),
+            withCheckpoint.limitContext(0),
+        )
+    }
+
+    @Test
+    fun `checkpointContext returns full effective context without applying context limit`() {
+        val messages = createTestMessages(30)
+        val checkpoint = messages[24].copy(
+            isContextCheckpoint = true,
+            contextCheckpointRetainedMessageIds = listOf(messages[20].id, messages[21].id),
+        )
+        val withCheckpoint = messages.subList(0, 24) + checkpoint + messages.subList(25, 30)
+
+        assertEquals(
+            listOf(messages[20], messages[21], checkpoint) + messages.subList(25, 30),
+            withCheckpoint.checkpointContext(),
+        )
+    }
+
     private fun List<UIMessage>.withCheckpointsAt(vararg indices: Int): List<UIMessage> =
         mapIndexed { index, message -> message.copy(isContextCheckpoint = index in indices) }
 

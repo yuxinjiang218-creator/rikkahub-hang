@@ -14,6 +14,7 @@ import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +31,7 @@ import me.rerere.hugeicons.stroke.AiBrain01
 import me.rerere.hugeicons.stroke.AiEditing
 import me.rerere.hugeicons.stroke.BubbleChat
 import me.rerere.hugeicons.stroke.ScanText
+import me.rerere.hugeicons.stroke.Package01
 import me.rerere.hugeicons.stroke.Translate
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
@@ -144,6 +146,11 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
         providers = settings.providers,
         type = ModelType.CHAT,
     )
+    val compressModel = rememberModelListState(
+        modelId = settings.compressModelId,
+        providers = settings.providers,
+        type = ModelType.CHAT,
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -224,6 +231,26 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                     iconContainerColor = containerColor,
                     iconContentColor = contentColor,
                 )
+                modelItem(
+                    icon = HugeIcons.Package01,
+                    title = R.string.setting_model_page_compress_model,
+                    description = R.string.setting_model_page_compress_model_desc,
+                    state = compressModel,
+                    iconContainerColor = containerColor,
+                    iconContentColor = contentColor,
+                )
+                if (settings.compressModelId != null) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_model_page_use_chat_model)) },
+                        trailingContent = {
+                            TextButton(onClick = {
+                                vm.updateSettings { latest -> latest.copy(compressModelId = null) }
+                            }) {
+                                Text(stringResource(R.string.setting_model_page_use_chat_model))
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -239,6 +266,9 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
     }
     ModelListSheet(state = ocrModel) {
         vm.updateSettings { latest -> latest.copy(ocrModelId = it.id) }
+    }
+    ModelListSheet(state = compressModel) {
+        vm.updateSettings { latest -> latest.copy(compressModelId = it.id) }
     }
 }
 

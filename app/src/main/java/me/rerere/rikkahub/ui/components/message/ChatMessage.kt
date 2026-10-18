@@ -112,6 +112,8 @@ fun ChatMessage(
     onClearTranslation: (UIMessage) -> Unit = {},
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
+    onRegenerateContextCheckpoint: (() -> Unit)? = null,
+    isRegeneratingContextCheckpoint: Boolean = false,
 ) {
     val message = node.messages[node.selectIndex]
     if (message.isContextCheckpoint) {
@@ -119,6 +121,8 @@ fun ChatMessage(
             message = message,
             onEdit = onEdit,
             onDelete = onDelete,
+            onRegenerate = onRegenerateContextCheckpoint,
+            isRegenerating = isRegeneratingContextCheckpoint,
             modifier = modifier,
         )
         return

@@ -421,11 +421,15 @@ private fun ChatPageContent(
                 previewMode = previewMode,
                 settings = setting,
                 hazeState = hazeState,
+                isRegeneratingLatestCompression = vm.isRegeneratingLatestCompression,
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
                 onRegenerate = {
                     vm.regenerateAtMessage(it)
+                },
+                onRegenerateLatestCompression = {
+                    vm.regenerateLatestCompression()
                 },
                 onEdit = {
                     inputState.editingMessage = it.id

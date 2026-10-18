@@ -164,10 +164,31 @@ fun Conversation.lastContextTokens(): Int? {
 }
 
 /** 在 [afterNodeId] 节点之后插入压缩检查点；该节点已不存在时返回 null。 */
-internal fun Conversation.insertContextCheckpoint(afterNodeId: Uuid, summary: String): Conversation? {
+internal fun Conversation.insertContextCheckpoint(
+    afterNodeId: Uuid,
+    summary: String,
+    keepRecentMessages: Int = 0,
+    sourceMessageIds: List<Uuid> = emptyList(),
+    additionalPrompt: String = "",
+    prompt: String = "",
+    promptTemplate: String = "",
+    modelId: Uuid? = null,
+    usesChatModel: Boolean = true,
+    retainedMessageIds: List<Uuid> = emptyList(),
+): Conversation? {
     val index = messageNodes.indexOfFirst { it.id == afterNodeId }
     if (index == -1) return null
-    val checkpoint = UIMessage.user(summary).copy(isContextCheckpoint = true).toMessageNode()
+    val checkpoint = UIMessage.user(summary).copy(
+        isContextCheckpoint = true,
+        contextCheckpointKeepRecentMessages = keepRecentMessages.coerceAtLeast(0),
+        contextCheckpointSourceMessageIds = sourceMessageIds,
+        contextCheckpointAdditionalPrompt = additionalPrompt,
+        contextCheckpointPrompt = prompt,
+        contextCheckpointPromptTemplate = promptTemplate,
+        contextCheckpointModelId = modelId,
+        contextCheckpointUsesChatModel = usesChatModel,
+        contextCheckpointRetainedMessageIds = retainedMessageIds,
+    ).toMessageNode()
     return copy(
         messageNodes = messageNodes.subList(0, index + 1) + checkpoint + messageNodes.subList(index + 1, messageNodes.size),
     )

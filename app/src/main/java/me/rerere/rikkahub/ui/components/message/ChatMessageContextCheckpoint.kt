@@ -45,6 +45,8 @@ fun ChatMessageContextCheckpoint(
     message: UIMessage,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onRegenerate: (() -> Unit)? = null,
+    isRegenerating: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -107,6 +109,16 @@ fun ChatMessageContextCheckpoint(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,
                     ) {
+                        if (onRegenerate != null) {
+                            TextButton(onClick = onRegenerate, enabled = !isRegenerating) {
+                                Text(
+                                    stringResource(
+                                        if (isRegenerating) R.string.chat_page_compress_regenerating
+                                        else R.string.chat_page_compress_regenerate
+                                    )
+                                )
+                            }
+                        }
                         TextButton(onClick = onEdit) {
                             Text(stringResource(R.string.edit))
                         }

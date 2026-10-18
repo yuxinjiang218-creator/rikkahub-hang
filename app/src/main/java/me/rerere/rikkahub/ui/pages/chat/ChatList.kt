@@ -142,6 +142,8 @@ fun ChatList(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    onRegenerateLatestCompression: () -> Unit = {},
+    isRegeneratingLatestCompression: Boolean = false,
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -184,6 +186,8 @@ fun ChatList(
                 onToolAnswer = onToolAnswer,
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
+                onRegenerateLatestCompression = onRegenerateLatestCompression,
+                isRegeneratingLatestCompression = isRegeneratingLatestCompression,
             )
         }
     }
@@ -233,6 +237,8 @@ private fun ChatListNormal(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    onRegenerateLatestCompression: () -> Unit = {},
+    isRegeneratingLatestCompression: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -293,6 +299,7 @@ private fun ChatListNormal(
             .associateBy { it.id }
     }
     val lastMessageIndex = conversation.messageNodes.lastIndex
+    val latestCheckpointId = conversation.currentMessages.lastOrNull { it.isContextCheckpoint }?.id
 
     Box(
         modifier = Modifier
@@ -392,6 +399,11 @@ private fun ChatListNormal(
                             onClearTranslation = onClearTranslation,
                             onToolApproval = onToolApproval,
                             onToolAnswer = onToolAnswer,
+                            onRegenerateContextCheckpoint = if (node.currentMessage.id == latestCheckpointId) {
+                                onRegenerateLatestCompression
+                            } else null,
+                            isRegeneratingContextCheckpoint = isRegeneratingLatestCompression &&
+                                node.currentMessage.id == latestCheckpointId,
                             lastMessage = index == lastMessageIndex,
                         )
                     }

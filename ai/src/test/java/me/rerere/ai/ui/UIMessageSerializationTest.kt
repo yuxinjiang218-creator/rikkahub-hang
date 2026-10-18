@@ -32,6 +32,35 @@ class UIMessageSerializationTest {
     }
 
     @Test
+    fun `context checkpoint metadata survives serialization`() {
+        val retainedId = Uuid.random()
+        val sourceId = Uuid.random()
+        val modelId = Uuid.random()
+        val message = UIMessage.user("summary").copy(
+            isContextCheckpoint = true,
+            contextCheckpointKeepRecentMessages = 2,
+            contextCheckpointRetainedMessageIds = listOf(retainedId),
+            contextCheckpointSourceMessageIds = listOf(sourceId),
+            contextCheckpointAdditionalPrompt = "focus",
+            contextCheckpointPrompt = "prompt",
+            contextCheckpointPromptTemplate = "template",
+            contextCheckpointModelId = modelId,
+            contextCheckpointUsesChatModel = false,
+        )
+
+        val decoded = Json.decodeFromString<UIMessage>(Json.encodeToString(message))
+
+        assertEquals(2, decoded.contextCheckpointKeepRecentMessages)
+        assertEquals(listOf(retainedId), decoded.contextCheckpointRetainedMessageIds)
+        assertEquals(listOf(sourceId), decoded.contextCheckpointSourceMessageIds)
+        assertEquals("focus", decoded.contextCheckpointAdditionalPrompt)
+        assertEquals("prompt", decoded.contextCheckpointPrompt)
+        assertEquals("template", decoded.contextCheckpointPromptTemplate)
+        assertEquals(modelId, decoded.contextCheckpointModelId)
+        assertFalse(decoded.contextCheckpointUsesChatModel)
+    }
+
+    @Test
     fun `messages stored before checkpoints existed decode as ordinary messages`() {
         val legacy = """{"id":"00000000-0000-0000-0000-000000000001","role":"user","parts":[]}"""
 

@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.datastore
 
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ModelType
 
 /** 读盘后和每次修改后都要过一遍，保证内存里的设置始终是规整的。 */
 internal fun Settings.normalized(): Settings =
@@ -94,6 +95,11 @@ internal fun Settings.withoutInvalidReferences(): Settings {
             ?.takeIf { id -> asrProviders.any { provider -> provider.id == id } }
             ?: asrProviders.firstOrNull()?.id,
         favoriteModels = settings.favoriteModels.filter { it in validModelIds },
+        compressModelId = settings.compressModelId?.takeIf { id ->
+            id in validModelIds && settings.providers.any { provider ->
+                provider.models.any { model -> model.id == id && model.type == ModelType.CHAT }
+            }
+        },
         modeInjections = settings.modeInjections.distinctBy { it.id },
         lorebooks = settings.lorebooks.distinctBy { it.id },
         quickMessages = settings.quickMessages.distinctBy { it.id },
@@ -104,4 +110,5 @@ internal fun Settings.withoutInvalidReferences(): Settings {
 private fun Settings.withValuesInRange(): Settings = copy(
     searchServiceSelected = searchServiceSelected.coerceIn(0, (searchServices.size - 1).coerceAtLeast(0)),
     defaultTTSPlaybackSpeed = defaultTTSPlaybackSpeed.coerceIn(0.5f, 2.0f),
+    manualCompressKeepRecentMessages = manualCompressKeepRecentMessages.coerceAtLeast(0),
 )

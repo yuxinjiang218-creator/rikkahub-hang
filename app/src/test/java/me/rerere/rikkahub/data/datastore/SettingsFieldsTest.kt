@@ -75,6 +75,8 @@ class SettingsFieldsTest {
         assertEquals(null, settings.selectedASRProviderId)
         assertEquals(true, settings.dynamicColor)
         assertEquals(8080, settings.webServerPort)
+        assertEquals(null, settings.compressModelId)
+        assertEquals(6, settings.manualCompressKeepRecentMessages)
     }
 
     @Test
@@ -132,6 +134,9 @@ private val SAMPLE = Settings(
     suggestionPrompt = "suggestion",
     ocrModelId = id(5),
     ocrPrompt = "ocr",
+    compressModelId = id(6),
+    compressPrompt = "compress",
+    manualCompressKeepRecentMessages = 9,
     assistantId = id(20),
     providers = listOf(ProviderSetting.OpenAI(id = id(31), name = "Provider")),
     assistants = listOf(Assistant(id = id(20), name = "Assistant")),
@@ -186,6 +191,9 @@ private val STORED_KEYS = setOf(
     "suggestion_prompt",
     "ocr_model",
     "ocr_prompt",
+    "compress_model",
+    "compress_prompt",
+    "manual_compress_keep_recent_messages",
     "providers",
     "select_assistant",
     "assistants",
