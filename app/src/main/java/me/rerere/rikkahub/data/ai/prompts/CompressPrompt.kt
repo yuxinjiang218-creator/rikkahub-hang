@@ -79,7 +79,7 @@ internal fun buildCompressPrompt(
         "content" to content,
         "target_tokens" to "2000",
     )
-    val expanded = Regex("""\{([^{}]+)}""").replace(template) { match ->
+    val expanded = Regex("""\{([^{}]+)\}""").replace(template) { match ->
         replacements[match.groupValues[1]] ?: match.value
     }
     append(expanded)
