@@ -36,10 +36,13 @@ class ChatHistoryContextSanitizerTest {
                     id = kotlin.uuid.Uuid.random(),
                     messages = listOf(message(MessageRole.ASSISTANT, tool("search_web", "web result"))),
                 ),
-                MessageNode(messages = listOf(
-                    message(MessageRole.ASSISTANT, tool("conversation_search", "history result")),
-                    message(MessageRole.ASSISTANT, tool("other_tool", "keep this")),
-                )),
+                MessageNode(
+                    id = kotlin.uuid.Uuid.random(),
+                    messages = listOf(
+                        message(MessageRole.ASSISTANT, tool("conversation_search", "history result")),
+                        message(MessageRole.ASSISTANT, tool("other_tool", "keep this")),
+                    ),
+                ),
             ),
         )
 
