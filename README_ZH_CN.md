@@ -73,9 +73,6 @@
 - [Okhttp](https://square.github.io/okhttp/) (HTTP 客户端)
 - [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) (Json序列化)
 
-> [!TIP]
-> 你需要在 `app` 文件夹下添加 `google-services.json` 文件才能构建应用。
-
 ## 💰 捐赠
 
 * [Ko-fi](https://ko-fi.com/reovodev)

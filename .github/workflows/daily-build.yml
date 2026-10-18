@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       debug_only:
-        description: '只构建 Debug APK，不读取签名和 Firebase 密钥'
+        description: '只构建 Debug APK，不读取签名密钥'
         required: false
         type: boolean
         default: false
@@ -94,45 +94,6 @@ jobs:
 
           # 写入签名配置到local.properties
           echo "${{ secrets.SIGNING_CONFIG }}" > local.properties
-
-          # 写入Google Services配置
-          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
-
-      - name: Prepare debug build files
-        if: ${{ inputs.debug_only == true }}
-        run: |
-          cat > app/google-services.json <<'EOF'
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "build-only-placeholder",
-              "storage_bucket": "build-only-placeholder.invalid"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                  "android_client_info": {
-                    "package_name": "me.rerere.rikkahub.hang"
-                  }
-                },
-                "api_key": [{ "current_key": "build-only-placeholder" }],
-                "services": {}
-              },
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000001",
-                  "android_client_info": {
-                    "package_name": "me.rerere.rikkahub.hang.debug"
-                  }
-                },
-                "api_key": [{ "current_key": "build-only-placeholder" }],
-                "services": {}
-              }
-            ],
-            "configuration_version": "1"
-          }
-          EOF
 
       - name: Gradle Release Build
         if: ${{ inputs.debug_only != true }}
