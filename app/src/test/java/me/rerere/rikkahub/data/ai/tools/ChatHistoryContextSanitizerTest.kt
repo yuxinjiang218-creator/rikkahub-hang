@@ -30,6 +30,7 @@ class ChatHistoryContextSanitizerTest {
     @Test
     fun `clears web and chat history search outputs across all message branches`() {
         val conversation = Conversation.ofId(
+            id = kotlin.uuid.Uuid.random(),
             assistantId = kotlin.uuid.Uuid.random(),
             messages = listOf(
                 MessageNode(
