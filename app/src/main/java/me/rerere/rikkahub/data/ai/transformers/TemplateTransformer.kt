@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai.transformers
 
 import io.pebbletemplates.pebble.PebbleEngine
 import io.pebbletemplates.pebble.loader.Loader
+import me.rerere.ai.core.MessageRole
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import me.rerere.ai.ui.UIMessage
@@ -25,7 +26,7 @@ class TemplateTransformer(
         val template = engine.getTemplate(ctx.assistant.id.toString())
         val timeZone = TimeZone.currentSystemDefault()
         return messages.map { message ->
-            if (message.isSynthetic) return@map message
+            if (message.isSynthetic || message.role != MessageRole.USER) return@map message
 
             // 使用消息本身的发送时间而不是当前时间, 保证多次请求时渲染结果稳定, 不破坏 prompt 缓存
             val createdAt = message.createdAt.toInstant(timeZone).toJavaInstant()

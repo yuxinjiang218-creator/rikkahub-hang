@@ -274,6 +274,10 @@ class ChatVM(
         }
     }
 
+    fun clearSearchResults(): Job = viewModelScope.launch {
+        chatService.clearSearchResults(_conversationId)
+    }
+
     fun showDeleteBlockedWhileGeneratingError() {
         chatService.addError(
             error = IllegalStateException("请先停止生成再删除消息"),

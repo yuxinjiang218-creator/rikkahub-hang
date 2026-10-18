@@ -19,8 +19,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Badge
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -31,6 +36,7 @@ import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +60,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Camera01
+import me.rerere.hugeicons.stroke.Clean
 import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Files02
@@ -99,6 +106,8 @@ internal fun FilesPicker(
     state: ChatInputState,
     mcpManager: McpManager,
     onCompressContext: (additionalPrompt: String, keepRecentMessages: Int) -> Job,
+    onClearSearchResults: () -> Unit,
+    onScrollToLatestCompression: () -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateWorkspaceCwd: (String?) -> Unit,
     showCompressDialog: Boolean,
@@ -123,6 +132,7 @@ internal fun FilesPicker(
     }
     val showCwd = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name
     var showCwdSheet by remember { mutableStateOf(false) }
+    var showClearSearchResultsDialog by remember { mutableStateOf(false) }
 
     var page by remember { mutableStateOf(FilesPickerPage.MAIN) }
     // 在子页面时，返回键回到主页面而不是关闭 sheet
@@ -187,7 +197,7 @@ internal fun FilesPicker(
                 val showMcp = settings.mcpServers.isNotEmpty()
                 // 限制了上下文消息数就是滚动上下文，旧消息会自动移出，不需要压缩
                 val showCompress = assistant.contextMessageLimit <= 0
-                val itemCount = 1 + listOf(showWorkspace, showWorkspace && showCwd, showMcp, showCompress).count { it }
+                val itemCount = 2 + listOf(showWorkspace, showWorkspace && showCwd, showMcp, showCompress).count { it }
                 var itemIndex = 0
                 Column(
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
@@ -275,6 +285,16 @@ internal fun FilesPicker(
                     if (showCompress) {
                         SegmentedListItem(
                             onClick = { onShowCompressDialogChange(true) },
+                            modifier = Modifier.pointerInput(onScrollToLatestCompression) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val longPress = awaitLongPressOrCancellation(down.id)
+                                    if (longPress != null) {
+                                        longPress.consume()
+                                        onScrollToLatestCompression()
+                                    }
+                                }
+                            },
                             shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
                             leadingContent = {
                                 Icon(
@@ -316,6 +336,16 @@ internal fun FilesPicker(
                             Text(stringResource(R.string.chat_page_compress_context))
                         }
                     }
+
+                    SegmentedListItem(
+                        onClick = { showClearSearchResultsDialog = true },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = {
+                            Icon(HugeIcons.Clean, contentDescription = null)
+                        },
+                    ) {
+                        Text(stringResource(R.string.chat_page_clear_search_results))
+                    }
                 }
             }
         }
@@ -340,6 +370,28 @@ internal fun FilesPicker(
         },
             initialKeepRecentMessages = settings.manualCompressKeepRecentMessages,
             onConfirm = onCompressContext,
+        )
+    }
+
+    if (showClearSearchResultsDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearSearchResultsDialog = false },
+            title = { Text(stringResource(R.string.chat_page_clear_search_results)) },
+            text = { Text(stringResource(R.string.chat_page_clear_search_results_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearSearchResultsDialog = false
+                    onClearSearchResults()
+                    onDismiss()
+                }) {
+                    Text(stringResource(R.string.common_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearSearchResultsDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
         )
     }
 }

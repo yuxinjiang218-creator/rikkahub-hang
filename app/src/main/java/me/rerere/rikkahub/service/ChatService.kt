@@ -47,6 +47,7 @@ import me.rerere.rikkahub.data.ai.TranslationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.prompts.buildCompressPrompt
 import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
+import me.rerere.rikkahub.data.ai.tools.clearSearchResults
 import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -1341,6 +1342,10 @@ class ChatService(
             conversation.deleteMessage(messageId)
                 ?: if (failIfMissing) throw NotFoundException("Message not found") else conversation
         }
+    }
+
+    suspend fun clearSearchResults(conversationId: Uuid) {
+        mutate(conversationId) { it.clearSearchResults() }
     }
 
     suspend fun deleteMessage(

@@ -493,6 +493,16 @@ private fun ChatPageContent(
                 attachmentPickerActions = attachmentPickerActions,
                 onStartVoiceMode = onStartVoiceMode,
                 onDismiss = { showFilesSheet = false },
+                onScrollToLatestCompression = {
+                    val checkpointIndex = conversation.currentMessages.indexOfLast { it.isContextCheckpoint }
+                    showFilesSheet = false
+                    if (checkpointIndex >= 0) {
+                        scope.launch {
+                            delay(250)
+                            chatListState.animateScrollToItem(checkpointIndex)
+                        }
+                    }
+                },
             )
         }
     }
@@ -509,6 +519,7 @@ private fun ChatFilesPickerSheet(
     attachmentPickerActions: ChatAttachmentPickerActions,
     onStartVoiceMode: () -> Unit,
     onDismiss: () -> Unit,
+    onScrollToLatestCompression: () -> Unit,
 ) {
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
@@ -535,6 +546,8 @@ private fun ChatFilesPickerSheet(
             chatModel = chatModel,
             mcpManager = vm.mcpManager,
             onCompressContext = vm::handleCompressContext,
+            onClearSearchResults = vm::clearSearchResults,
+            onScrollToLatestCompression = onScrollToLatestCompression,
             onUpdateAssistant = vm::updateAssistant,
             onUpdateWorkspaceCwd = vm::updateWorkspaceCwd,
             showCompressDialog = showCompressDialog,

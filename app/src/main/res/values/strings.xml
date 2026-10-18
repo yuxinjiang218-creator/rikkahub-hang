@@ -257,6 +257,8 @@
   <string name="chat_page_compress_context_desc">Compress the conversation into a summary to save tokens</string>
   <string name="chat_page_compress_keep_recent">Keep recent messages</string>
   <string name="chat_page_compress_context_title">Compress Conversation History</string>
+  <string name="chat_page_clear_search_results">Clear Search Results</string>
+  <string name="chat_page_clear_search_results_confirm">Clear web search and chat history search results from this conversation? The search calls will remain, but their results will be removed.</string>
   <string name="chat_page_compress_regenerate">Regenerate summary</string>
   <string name="chat_page_compress_regenerating">Regenerating summary…</string>
   <string name="chat_page_compressing">Compressing...</string>
