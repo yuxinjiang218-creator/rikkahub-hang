@@ -27,6 +27,7 @@ import kotlin.uuid.Uuid
 fun createConversationTools(
     conversationRepo: ConversationRepository,
     assistantId: Uuid,
+    currentConversationId: Uuid? = null,
 ): List<Tool> = listOf(
     Tool(
         name = "recent_chats",
@@ -67,11 +68,17 @@ fun createConversationTools(
             listOf(UIMessagePart.Text(JsonInstantPretty.encodeToString(payload)))
         }
     ),
-    conversationSearchTool { query -> conversationRepo.searchMessages(query, MessageSearchSort.RELEVANCE) },
-    conversationContextTool(conversationRepo),
+    conversationSearchTool {
+        query -> conversationRepo.searchMessages(query, MessageSearchSort.RELEVANCE)
+            .filter { it.conversationId != currentConversationId?.toString() }
+    },
+    conversationContextTool(conversationRepo, currentConversationId),
 )
 
-private fun conversationContextTool(conversationRepo: ConversationRepository) = Tool(
+private fun conversationContextTool(
+    conversationRepo: ConversationRepository,
+    currentConversationId: Uuid?,
+) = Tool(
     name = "read_chat_context",
     description = "Read a small window of user and assistant messages around a message in a conversation. Use the conversation_id from conversation_search.",
     parameters = {
@@ -101,6 +108,7 @@ private fun conversationContextTool(conversationRepo: ConversationRepository) = 
             ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
             ?: error("conversation_id must be a valid UUID")
         val conversation = conversationRepo.getConversationById(id) ?: error("conversation not found")
+        require(conversation.id != currentConversationId) { "The current conversation is already in context" }
         val messages = conversation.currentMessages.filter {
             it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT
         }
