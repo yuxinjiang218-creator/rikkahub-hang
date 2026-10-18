@@ -5,6 +5,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -119,7 +120,11 @@ private fun historySearchTool(
                 })
                 put("role", buildJsonObject {
                     put("type", "string")
-                    put("enum", buildJsonArray { add("user"); add("assistant"); add("any") })
+                    put("enum", buildJsonArray {
+                        add(JsonPrimitive("user"))
+                        add(JsonPrimitive("assistant"))
+                        add(JsonPrimitive("any"))
+                    })
                     put("description", "Required: user, assistant, or any")
                 })
                 put("limit", buildJsonObject {
@@ -180,7 +185,9 @@ private fun historySearchTool(
                         put("conversation_title", group.title.ifBlank { "Untitled" })
                         put("hit_count", group.hitCount)
                         put("latest_hit_time", group.latestHitTime.toString())
-                        put("roles_hit", buildJsonArray { group.rolesHit.forEach { add(it.name.lowercase()) } })
+                        put("roles_hit", buildJsonArray {
+                            group.rolesHit.forEach { add(JsonPrimitive(it.name.lowercase())) }
+                        })
                         put("top_refs", buildJsonArray { group.topResults.forEach { add(historySearchResultRef(it)) } })
                         put("top_snippets", buildJsonArray { group.topResults.forEach { result -> add(buildJsonObject {
                             put("ref", historySearchResultRef(result))

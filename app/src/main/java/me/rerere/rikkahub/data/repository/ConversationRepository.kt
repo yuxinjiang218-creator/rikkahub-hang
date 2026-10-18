@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.toInstant
+import kotlin.time.toJavaInstant
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.ConversationSortOrder
@@ -406,7 +407,7 @@ class ConversationRepository(
                 if (message.id != messageId || (role != null && message.role != role)) return@mapNotNull null
                 result.copy(
                     role = message.role,
-                    createdAt = message.createdAt.toInstant(TimeZone.currentSystemDefault()),
+                    createdAt = message.createdAt.toInstant(TimeZone.currentSystemDefault()).toJavaInstant(),
                     isSelected = true,
                 )
             }
