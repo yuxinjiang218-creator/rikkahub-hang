@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.db.fts
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.AppDatabase
@@ -16,6 +17,9 @@ data class MessageSearchResult(
     val title: String,
     val updateAt: Instant,
     val snippet: String,
+    val role: MessageRole = MessageRole.ASSISTANT,
+    val createdAt: Instant = Instant.EPOCH,
+    val isSelected: Boolean = true,
 )
 
 enum class MessageSearchSort(val orderBy: String) {
@@ -70,31 +74,60 @@ class MessageFtsManager(private val database: AppDatabase) {
         sort: MessageSearchSort = MessageSearchSort.RELEVANCE,
         // 只搜这些助手的对话，null 表示不限
         assistantIds: Collection<String>? = null,
+        excludeConversationId: String? = null,
+        conversationId: String? = null,
+        limit: Int = 50,
+        selectedOnly: Boolean = false,
+        messageRole: String? = null,
     ): List<MessageSearchResult> = withContext(Dispatchers.IO) {
         val results = mutableListOf<MessageSearchResult>()
         if (assistantIds != null && assistantIds.isEmpty()) return@withContext results
-        val assistantFilter = if (assistantIds != null) {
-            """
-            AND EXISTS (
+        val whereClauses = mutableListOf("text MATCH jieba_query(?)")
+        val args = mutableListOf<Any>(keyword)
+        if (assistantIds != null) {
+            whereClauses += """
+                EXISTS (
                 SELECT 1 FROM conversationentity AS conversation
                 WHERE conversation.id = message_fts.conversation_id
                   AND conversation.assistant_id IN (${assistantIds.joinToString { "?" }})
             )
             """.trimIndent()
-        } else {
-            ""
+            args.addAll(assistantIds)
         }
+        if (!excludeConversationId.isNullOrBlank()) {
+            whereClauses += "conversation_id != ?"
+            args += excludeConversationId
+        }
+        if (!conversationId.isNullOrBlank()) {
+            whereClauses += "conversation_id = ?"
+            args += conversationId
+        }
+        if (selectedOnly) {
+            val roleClause = if (!messageRole.isNullOrBlank()) "AND json_extract(message.value, '$.role') = ?" else ""
+            whereClauses += """
+                EXISTS (
+                    SELECT 1
+                    FROM message_node AS node, json_each(node.messages) AS message
+                    WHERE node.id = message_fts.node_id
+                      AND node.conversation_id = message_fts.conversation_id
+                      AND CAST(message.key AS INTEGER) = node.select_index
+                      AND json_extract(message.value, '$.id') = message_fts.message_id
+                      $roleClause
+                )
+            """.trimIndent()
+            if (!messageRole.isNullOrBlank()) args += messageRole
+        }
+        args += limit.coerceIn(1, 200)
         val cursor = db.query(
             """
             SELECT node_id, message_id, conversation_id, title, update_at,
                    simple_snippet(message_fts, 0, '[', ']', '...', 30) AS snippet
             FROM message_fts
-            WHERE text MATCH jieba_query(?)
-            $assistantFilter
+            WHERE ${whereClauses.joinToString(" AND ")}
             ORDER BY ${sort.orderBy}
-            LIMIT 50
+            LIMIT ?
             """.trimIndent(),
-            arrayOf(keyword, *assistantIds.orEmpty().toTypedArray())
+            args.toTypedArray()
         )
         Log.i(TAG, "search: $keyword")
         cursor.use {

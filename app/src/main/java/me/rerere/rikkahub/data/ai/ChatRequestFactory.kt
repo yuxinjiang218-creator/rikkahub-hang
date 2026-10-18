@@ -19,6 +19,7 @@ import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
+import me.rerere.rikkahub.data.ai.tools.clearHistoricalChatHistoryResultsForModelContext
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
@@ -117,6 +118,7 @@ class ChatRequestFactory(
                 assistant = assistant,
                 model = model,
                 currentConversationId = conversation.id,
+                historyMessages = conversation.currentMessages,
                 workspaceCwd = conversation.workspaceCwd,
             ),
         )
@@ -259,7 +261,8 @@ class ChatRequestFactory(
             if (system.isNotBlank()) {
                 add(UIMessage.system(prompt = system).copy(isSynthetic = true))
             }
-            addAll(if (applyContextLimit) messages.limitContext(assistant.contextMessageLimit) else messages)
+            val contextMessages = if (applyContextLimit) messages.limitContext(assistant.contextMessageLimit) else messages
+            addAll(clearHistoricalChatHistoryResultsForModelContext(contextMessages))
         }.transforms(
             transformers = inputTransformers,
             context = context,

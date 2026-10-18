@@ -6,6 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
@@ -50,6 +51,7 @@ class ChatToolFactory(
         assistant: Assistant,
         model: Model,
         currentConversationId: Uuid? = null,
+        historyMessages: List<UIMessage> = emptyList(),
         workspaceCwd: String? = null,
     ): List<Tool> {
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
@@ -62,7 +64,7 @@ class ChatToolFactory(
             }
             addAll(localTools.getTools(assistant.localTools))
             if (assistant.enableRecentChatsReference) {
-                addAll(createConversationTools(conversationRepository, assistant.id, currentConversationId))
+                addAll(createConversationTools(conversationRepository, assistant.id, currentConversationId, historyMessages))
             }
             addAll(workspaceTools)
             if (assistant.enabledSkills.isNotEmpty()) {
