@@ -19,7 +19,6 @@ import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
-import me.rerere.rikkahub.data.ai.tools.clearHistoricalChatHistoryResultsForModelContext
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
@@ -261,8 +260,8 @@ class ChatRequestFactory(
             if (system.isNotBlank()) {
                 add(UIMessage.system(prompt = system).copy(isSynthetic = true))
             }
-            val contextMessages = if (applyContextLimit) messages.limitContext(assistant.contextMessageLimit) else messages
-            addAll(clearHistoricalChatHistoryResultsForModelContext(contextMessages))
+            // 搜索结果正文不做自动清理，只由用户手动「清除搜索结果」处理
+            addAll(if (applyContextLimit) messages.limitContext(assistant.contextMessageLimit) else messages)
         }.transforms(
             transformers = inputTransformers,
             context = context,
