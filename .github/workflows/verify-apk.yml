@@ -1,0 +1,68 @@
+name: Verify APK Signature
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要校验的 release tag'
+        required: true
+        default: '3.0.0'
+      asset:
+        description: '资产名（支持通配）'
+        required: true
+        default: 'rikka-3.0.0-arm64.apk'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载资产并计算校验和
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p "${{ inputs.asset }}" -D out
+          ls -l out
+          sha256sum out/*
+
+      - name: 定位 apksigner / zipalign
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER=$(ls -d "$SDK"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "未找到 apksigner，可用的 build-tools:"; ls "$SDK"/build-tools 2>/dev/null || true
+            exit 1
+          fi
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+          echo "ZIPALIGN=$(dirname "$APKSIGNER")/zipalign" >> "$GITHUB_ENV"
+          echo "使用 $APKSIGNER"
+
+      - name: apksigner 验签
+        run: |
+          set -euo pipefail
+          for apk in out/*.apk; do
+            echo "===== $apk"
+            "$APKSIGNER" verify --verbose --print-certs "$apk"
+          done
+
+      - name: 检查签名方案与 v1 文件
+        run: |
+          set -euo pipefail
+          for apk in out/*.apk; do
+            echo "===== $apk"
+            echo "-- 签名方案 --"
+            "$APKSIGNER" verify --print-certs "$apk" >/dev/null && echo "verify OK"
+            echo "-- META-INF 里的 v1 签名文件 --"
+            unzip -l "$apk" | grep -Ei 'META-INF/.*(\.SF|\.RSA|\.DSA|\.EC|MANIFEST\.MF)' || echo "（无 v1 签名文件）"
+          done
+
+      - name: zipalign 对齐检查
+        run: |
+          set -uo pipefail
+          for apk in out/*.apk; do
+            echo "===== $apk"
+            "$ZIPALIGN" -c -v 4 "$apk" > /tmp/align.log 2>&1 && echo "4 字节对齐 OK" || (echo "对齐不通过"; tail -5 /tmp/align.log)
+          done
