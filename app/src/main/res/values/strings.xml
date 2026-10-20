@@ -1546,13 +1546,11 @@
   <string name="chat_page_compress_checkpoint_hint">Older messages remain visible above this line, but this summary replaces them when sent to the model. Kept recent messages appear after the summary, followed by newer messages. Delete the summary to return to the previous summary, or the uncompressed history if there is no earlier summary. Normal context limits still apply.</string>
   <string name="chat_page_compress_blocked_generating">Stop the generation before compressing the context</string>
   <string name="chat_page_compress_nothing_to_compress">No new messages to compress since the last summary</string>
-  <string name="chat_page_compress_keep_recent">Keep recent messages</string>
   <string name="chat_page_compress_keep_recent_desc">These messages are not compressed and stay after the summary. 0 compresses everything and reuses the prompt cache best; if the conversation is too long to compress, keep more messages.</string>
   <string name="chat_page_compress_not_enough_messages">Not enough messages to compress. Reduce the number of messages to keep.</string>
   <string name="chat_page_compress_handle_pending_tools">Handle the pending tool calls before compressing</string>
   <string name="chat_page_compress_tool_call_response">The model tried to call a tool instead of writing the summary. Please try again.</string>
   <string name="chat_page_compress_conversation_changed">The conversation changed during compression. Please try again.</string>
-  <string name="chat_page_compress_not_enough_messages">There are not enough messages before the kept recent messages to compress.</string>
   <string name="chat_page_compress_no_summary">No compression summary found.</string>
   <string name="chat_page_compress_model_missing">The saved compression model is no longer available.</string>
   <string name="setting_model_page_compress_model">Compression Model</string>
