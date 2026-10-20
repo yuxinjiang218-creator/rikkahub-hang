@@ -827,7 +827,7 @@ class ChatService(
             }
             // 未完成的工具调用没有结果，请求会被服务端拒绝；压到检查点之前也再不会执行。
             // 保留区里的不发给压缩请求，压缩后照常留在检查点之后，不用检查
-            check(nodes.subList(checkpointIndex + 1, endIndex).none { node ->
+            check(nodes.subList(checkpointIndex + 1, nodes.size).none { node ->
                 node.currentMessage.getTools().any { it.isPending || it.canResumeExecution }
             }) { context.getString(R.string.chat_page_compress_handle_pending_tools) }
 

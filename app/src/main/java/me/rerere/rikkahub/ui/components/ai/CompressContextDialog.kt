@@ -37,8 +37,9 @@ fun CompressContextDialog(
     onConfirm: (additionalPrompt: String, keepRecentMessages: Int) -> Job,
 ) {
     var additionalPrompt by remember { mutableStateOf("") }
+    // 默认值取设置里上次用过的「保留最近消息条数」，用户可以临时改
     var keepRecentMessages by remember(initialKeepRecentMessages) {
-        mutableStateOf(initialKeepRecentMessages.toString())
+        mutableIntStateOf(initialKeepRecentMessages)
     }
     var currentJob by remember { mutableStateOf<Job?>(null) }
     val isLoading = currentJob?.isActive == true
@@ -132,7 +133,7 @@ fun CompressContextDialog(
                 TextButton(onClick = {
                     currentJob = onConfirm(
                         additionalPrompt,
-                        keepRecentMessages.toIntOrNull()?.coerceAtLeast(0) ?: initialKeepRecentMessages,
+                        keepRecentMessages.coerceAtLeast(0),
                     )
                 }) {
                     Text(stringResource(R.string.confirm))
