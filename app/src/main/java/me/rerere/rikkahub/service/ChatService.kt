@@ -269,7 +269,8 @@ class ChatService(
         session.initialize(
             load = { loadConversation(conversationId) },
             create = {
-                if (createIfMissing) newConversation(conversationId) else throw NotFoundException("Conversation not found")
+                if (!createIfMissing) throw NotFoundException("Conversation not found")
+                newConversation(conversationId)
             },
         )
         block(session)
@@ -310,7 +311,7 @@ class ChatService(
     private fun deleteUnreferencedFiles(previous: Conversation, current: Conversation) {
         val session = sessionManager.get(current.id)
         val queuedFiles = (session?.messageQueue?.state?.value?.messages.orEmpty() +
-                listOfNotNull(session?.submittingMessage))
+            listOfNotNull(session?.submittingMessage))
             .flatMap { it.parts }.localFileUrls().map { it.toUri() }
         val retainedFiles = (current.files + queuedFiles).toSet()
         val deletedFiles = previous.files.filter { it !in retainedFiles }
@@ -795,6 +796,12 @@ class ChatService(
 
     // ---- 压缩对话历史 ----
 
+    /**
+     * 把上一个检查点之后的消息压缩成摘要检查点。
+     *
+     * [keepRecentMessages] 为 0 时压缩全部消息，请求和上一轮对话前缀一致，缓存命中最好；
+     * 大于 0 时最近的这些消息不参与压缩、留在检查点之后，对话已经超出模型上下文、整段发不出去时用来缩小压缩请求。
+     */
     suspend fun compressConversation(
         conversationId: Uuid,
         additionalPrompt: String,
@@ -819,7 +826,8 @@ class ChatService(
                 throw IllegalStateException(context.getString(R.string.chat_page_compress_nothing_to_compress))
             }
             // 未完成的工具调用没有结果，请求会被服务端拒绝；压到检查点之前也再不会执行。
-            check(nodes.subList(checkpointIndex + 1, nodes.size).none { node ->
+            // 保留区里的不发给压缩请求，压缩后照常留在检查点之后，不用检查
+            check(nodes.subList(checkpointIndex + 1, endIndex).none { node ->
                 node.currentMessage.getTools().any { it.isPending || it.canResumeExecution }
             }) { context.getString(R.string.chat_page_compress_handle_pending_tools) }
 
