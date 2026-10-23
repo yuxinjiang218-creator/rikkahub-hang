@@ -100,35 +100,40 @@ class SqliteVectorStoreTest {
     @Test
     fun filtersApplyBeforeTruncation() {
         val random = Random(11)
-        // conv-b 里放 3 条离查询最近的向量，但整体上它们排不进全局前 10
-        val vectors = HashMap<String, FloatArray>()
         val records = ArrayList<VectorChunkRecord>()
         repeat(200) { index ->
-            val vector = unitVector(random)
-            vectors["m$index"] = vector
-            records += record("m$index", vector, conversationId = "conv-a")
+            records += record("m$index", unitVector(random), conversationId = "conv-a")
         }
         val query = unitVector(random)
-        // 与查询几乎同向的三条，只存在于 conv-b
-        val near = FloatArray(dimension) { query[it] * 0.999f }
+        // 与查询几乎同向的三条只放在 conv-b：它们必然是全局最近的三条
+        val near = FloatArray(dimension) { query[it] }
         repeat(3) { index ->
             records += record("near-$index", near, conversationId = "conv-b")
         }
         store.upsert(records)
 
         val global = store.search(query, limit = 5)
-        assertTrue("全局前 5 不应该有 conv-b", global.none { it.conversationId == "conv-b" })
+        assertEquals(3, global.count { it.conversationId == "conv-b" })
 
+        // 排除 conv-b 之后仍要凑满 5 条：说明排除发生在截断之前，
+        // 而不是先取全局前 5 再过滤（那样只会剩 2 条）
+        val excluded = store.search(query, limit = 5, filter = VectorFilter(excludeConversationId = "conv-b"))
+        assertEquals(5, excluded.size)
+        assertTrue(excluded.none { it.conversationId == "conv-b" })
+
+        // 只搜 conv-b：过滤后仍返回它的三条
         val scoped = store.search(query, limit = 5, filter = VectorFilter(conversationId = "conv-b"))
         assertEquals(3, scoped.size)
         assertTrue(scoped.all { it.conversationId == "conv-b" })
 
-        val excluded = store.search(
+        // 待处理索引任务的会话从召回里排除
+        val pending = store.search(
             query,
-            limit = 200,
-            filter = VectorFilter(excludeConversationId = "conv-b")
+            limit = 5,
+            filter = VectorFilter(excludeConversationIds = setOf("conv-b"))
         )
-        assertTrue(excluded.none { it.conversationId == "conv-b" })
+        assertEquals(5, pending.size)
+        assertTrue(pending.none { it.conversationId == "conv-b" })
     }
 
     @Test
@@ -192,17 +197,38 @@ class SqliteVectorStoreTest {
     }
 
     @Test
-    fun indexesAreStoredOncePerDimension() {
+    fun vectorsAreStoredOncePerDimension() {
+        // 固定行数、只改维度，用体积差值判断每维占几字节：
+        // 差值是 192 字节/行说明每维 1 字节（int8 单份），768 则说明偷偷存了 float32
+        val rows = 300
+        val smallDimension = 64
+        val largeDimension = 256
         val random = Random(29)
-        store.upsert((1..500).map { record("m$it", unitVector(random)) })
-        val stats = store.stats()
-        assertEquals(500, stats.chunkCount)
-        // int8 单份：每维 1 字节，加行开销与索引；放宽到 3 倍以内即说明没有偷偷存 float32
-        val int8Bytes = 500L * dimension
-        assertTrue(
-            "库体积 ${stats.fileSizeBytes} 应接近 int8 单份 ${int8Bytes * 2}",
-            stats.fileSizeBytes < int8Bytes * 3
-        )
+
+        val smallFile = File(databaseFile.parentFile, "small.db")
+        val largeFile = File(databaseFile.parentFile, "large.db")
+        val smallStore = SqliteVectorStore.open(context, smallFile)
+        val largeStore = SqliteVectorStore.open(context, largeFile)
+        try {
+            smallStore.ensureProfile(profile(id = "small", dim = smallDimension))
+            largeStore.ensureProfile(profile(id = "large", dim = largeDimension))
+            smallStore.upsert((1..rows).map { record("m$it", unitVector(random, smallDimension)) })
+            largeStore.upsert((1..rows).map { record("m$it", unitVector(random, largeDimension)) })
+            assertEquals(rows, smallStore.stats().chunkCount)
+            assertEquals(rows, largeStore.stats().chunkCount)
+
+            val delta = largeStore.stats().fileSizeBytes - smallStore.stats().fileSizeBytes
+            val expectedInt8 = rows.toLong() * (largeDimension - smallDimension)
+            val expectedFloat32 = expectedInt8 * 4
+            Log.i("SqliteVectorStoreTest", "delta=$delta expectedInt8=$expectedInt8 expectedF32=$expectedFloat32")
+            assertTrue(
+                "体积差值 $delta 应接近 int8 单份 $expectedInt8，而不是 float32 的 $expectedFloat32",
+                delta < expectedInt8 * 2
+            )
+        } finally {
+            runCatching { smallStore.close() }
+            runCatching { largeStore.close() }
+        }
     }
 
     @Test
