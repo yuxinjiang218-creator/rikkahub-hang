@@ -9,8 +9,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
-import java.util.UUID as JavaUUID
 import kotlin.uuid.Uuid
+import java.util.UUID as JavaUUID
 
 class ConversationHistoryRecallTest {
     @Test
