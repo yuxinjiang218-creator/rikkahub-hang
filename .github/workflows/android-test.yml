@@ -71,19 +71,28 @@ jobs:
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
-      - name: 检查原生库页对齐
+      - name: 构建 Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --stacktrace
+
+      - name: 检查 APK 内原生库页对齐
         run: |
           set -euo pipefail
-          # 上传前先静态确认：16KB 页设备要求 LOAD 段 p_align == 0x4000
+          # 16KB 页设备要求每个 LOAD 段 p_align == 0x4000，未对齐的 .so 会直接加载失败
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          echo "检查 $APK"
+          rm -rf /tmp/so-check && mkdir -p /tmp/so-check
+          unzip -o -q "$APK" 'lib/*/*.so' -d /tmp/so-check
           BAD=0
-          for so in $(find . -path ./build -prune -o -name "*.so" -print | grep -E "vector|simple"); do
+          while IFS= read -r so; do
             ALIGN=$(readelf -lW "$so" | awk '/LOAD/{print $NF}' | sort -u | tr '\n' ' ')
-            echo "$so -> align: $ALIGN"
+            echo "$so -> $ALIGN"
             case "$ALIGN" in
               *0x4000*) ;;
               *) echo "  !! 未按 16KB 页对齐"; BAD=1 ;;
             esac
-          done
+          done < <(find /tmp/so-check -name '*.so' | sort)
           if [ "$BAD" = "1" ]; then
             echo "存在未按 16KB 页对齐的原生库" >&2
             exit 1
@@ -105,11 +114,7 @@ jobs:
           # 16KB 页镜像需要较新的系统镜像与较新的模拟器
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            chmod +x gradlew
-            ./gradlew :app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest \
-              --stacktrace
+          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest --stacktrace
 
       - name: 上传测试报告
         if: always()
