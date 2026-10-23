@@ -112,7 +112,7 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
                     formItem(
                         headlineContent = { Text("指令（可留空）") },
                         supportingContent = {
-                            Text("只作用于查询，不改文档侧；换了它等于换了向量空间，会触发重建。")
+                            Text("只加在查询这一侧，不改已存的文档向量；改了它不需要重建索引。")
                         },
                         content = {
                             OutlinedTextField(

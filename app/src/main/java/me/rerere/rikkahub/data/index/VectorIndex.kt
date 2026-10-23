@@ -15,7 +15,12 @@ data class VectorProfile(
     val dtype: String = "int8",
     val extractVersion: Int = IndexableText.EXTRACT_VERSION,
     val chunkVersion: Int = TextChunker.CHUNK_VERSION,
-    /** 查询侧指令前缀，空串表示不加；进 profile 是因为改了它召回就变了 */
+    /**
+     * 查询侧指令前缀，空串表示不加。
+     *
+     * 它只影响查询怎么编码，不影响已经存下来的文档向量，所以**不参与 [id]**：
+     * 改它不该清库重建，否则每次调整措辞都要重算一遍全部向量。
+     */
     val instruction: String = "",
     /** int8 缩放系数，按维度算出来，全库统一 */
     val quantScale: Float = VectorQuantizer.scaleFor(dimension)
@@ -27,7 +32,6 @@ data class VectorProfile(
         append(dtype).append('|')
         append(extractVersion).append('|')
         append(chunkVersion).append('|')
-        append(instruction.hashCode().toUInt().toString(16)).append('|')
         append(java.lang.Float.floatToIntBits(quantScale).toUInt().toString(16))
     }
 
