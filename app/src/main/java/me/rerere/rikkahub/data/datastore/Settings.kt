@@ -84,6 +84,8 @@ data class Settings(
     val webServerAccessPassword: String = "",
     val webServerLocalhostOnly: Boolean = false,
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
+    // 聊天历史语义检索（向量索引）的设置，默认关闭
+    val embeddingIndex: EmbeddingIndexSetting = EmbeddingIndexSetting(),
     val sponsorAlertDismissedAt: Int = 0,
 ) {
     companion object {

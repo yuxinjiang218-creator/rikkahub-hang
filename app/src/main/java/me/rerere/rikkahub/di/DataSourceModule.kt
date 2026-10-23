@@ -29,6 +29,10 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
+import me.rerere.rikkahub.data.index.ConversationIndexer
+import me.rerere.rikkahub.data.index.EmbeddingClient
+import me.rerere.rikkahub.data.index.IndexTaskScheduler
+import me.rerere.rikkahub.data.index.VectorIndexProvider
 import me.rerere.rikkahub.data.remote.RemoteFileStore
 import me.rerere.rikkahub.data.remote.RikkaHubAPI
 import me.rerere.rikkahub.data.remote.SettingsProxyAuthenticator
@@ -134,6 +138,26 @@ val dataSourceModule = module {
 
     single {
         MessageFtsManager(get())
+    }
+
+    single {
+        get<AppDatabase>().conversationIndexTaskDao()
+    }
+
+    single {
+        VectorIndexProvider(get())
+    }
+
+    single {
+        EmbeddingClient(get())
+    }
+
+    single {
+        IndexTaskScheduler(get())
+    }
+
+    single {
+        ConversationIndexer(get(), get(), get(), get(), get())
     }
 
     single { McpManager(settingsStore = get(), appScope = get(), filesManager = get()) }

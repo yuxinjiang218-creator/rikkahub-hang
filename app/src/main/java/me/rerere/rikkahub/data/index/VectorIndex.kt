@@ -98,9 +98,15 @@ interface VectorIndex {
     /** 批量写入，同一条消息的同一块重复写入时覆盖 */
     fun upsert(chunks: List<VectorChunkRecord>)
 
+    /** 会话内每块的签名（"messageId#chunkIndex" -> contentHash），用于跳过没变的重新计算 */
+    fun chunkSignatures(conversationId: String): Map<String, String>
+
     fun deleteConversation(conversationId: String)
 
     fun deleteMessage(messageId: String)
+
+    /** 删除某条消息里指定的块（分块结果变短时用） */
+    fun deleteChunks(messageId: String, chunkIndexes: Collection<Int>)
 
     fun search(embedding: FloatArray, limit: Int, filter: VectorFilter = VectorFilter()): List<VectorHit>
 

@@ -22,9 +22,13 @@ import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
+import me.rerere.rikkahub.data.db.dao.ConversationIndexTaskDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
+import me.rerere.rikkahub.data.db.entity.ConversationIndexTaskEntity
+import me.rerere.rikkahub.data.db.entity.IndexTaskOp
+import me.rerere.rikkahub.data.index.IndexTaskScheduler
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
@@ -40,6 +44,8 @@ class ConversationRepository(
     private val database: AppDatabase,
     private val filesManager: FilesManager,
     private val messageFtsManager: MessageFtsManager,
+    private val conversationIndexTaskDao: ConversationIndexTaskDAO,
+    private val indexTaskScheduler: IndexTaskScheduler,
 ) {
     companion object {
         private const val PAGE_SIZE = 20
@@ -321,8 +327,10 @@ class ConversationRepository(
                 conversationToConversationEntity(conversation)
             )
             saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+            enqueueIndexTask(conversation.id.toString(), IndexTaskOp.UPSERT)
         }
         messageFtsManager.indexConversation(conversation)
+        indexTaskScheduler.schedule()
     }
 
     suspend fun updateConversation(conversation: Conversation) {
@@ -333,8 +341,10 @@ class ConversationRepository(
             // 删除旧的节点，插入新的节点
             messageNodeDAO.deleteByConversation(conversation.id.toString())
             saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+            enqueueIndexTask(conversation.id.toString(), IndexTaskOp.UPSERT)
         }
         messageFtsManager.indexConversation(conversation)
+        indexTaskScheduler.schedule()
     }
 
     suspend fun deleteConversation(conversation: Conversation) {
@@ -350,7 +360,10 @@ class ConversationRepository(
             conversationDAO.delete(
                 conversationToConversationEntity(conversation)
             )
+            // 删除任务保留到 worker 处理完，避免并发请求把已删内容写回来
+            enqueueIndexTask(conversation.id.toString(), IndexTaskOp.DELETE)
         }
+        indexTaskScheduler.schedule()
         filesManager.deleteChatFiles(fullConversation.files)
     }
 
@@ -477,6 +490,26 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * 写索引任务。必须和会话写入/删除在同一个事务里调用，否则会漏任务。
+     *
+     * 版本号按会话单调递增，worker 写向量前会复核，期间被改过就放弃这一轮。
+     */
+    private suspend fun enqueueIndexTask(conversationId: String, op: IndexTaskOp) {
+        val currentVersion = conversationIndexTaskDao.versionOf(conversationId) ?: 0L
+        conversationIndexTaskDao.upsert(
+            ConversationIndexTaskEntity(
+                conversationId = conversationId,
+                op = op.name,
+                version = currentVersion + 1,
+                updatedAt = System.currentTimeMillis(),
+            )
+        )
+    }
+
+    /** 后台重建向量索引时枚举全部会话 id */
+    suspend fun getAllConversationIds(): List<String> = conversationDAO.getAllIds()
+
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()
         val allIds = conversationDAO.getAllIds()
@@ -550,7 +583,12 @@ class ConversationRepository(
     }
 
     suspend fun updateConversationAssistant(conversationId: Uuid, assistantId: Uuid) {
-        conversationDAO.updateAssistantId(conversationId.toString(), assistantId.toString())
+        // 助手归属变了，向量行里的 assistant_id 也要跟着变，所以和写入放在同一个事务里重新排队
+        database.withTransaction {
+            conversationDAO.updateAssistantId(conversationId.toString(), assistantId.toString())
+            enqueueIndexTask(conversationId.toString(), IndexTaskOp.UPSERT)
+        }
+        indexTaskScheduler.schedule()
     }
 
     /**

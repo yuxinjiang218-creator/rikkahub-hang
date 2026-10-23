@@ -109,6 +109,40 @@ class SqliteVectorStore private constructor(
         }
     }
 
+    override fun chunkSignatures(conversationId: String): Map<String, String> = synchronized(lock) {
+        checkOpen()
+        val active = profile ?: return@synchronized emptyMap()
+        val signatures = HashMap<String, String>()
+        database.rawQuery(
+            "SELECT message_id, chunk_index, content_hash FROM $TABLE_CHUNKS " +
+                "WHERE profile_id = ? AND conversation_id = ?",
+            arrayOf(active.id, conversationId)
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                signatures["${cursor.getString(0)}#${cursor.getInt(1)}"] = cursor.getString(2)
+            }
+        }
+        signatures
+    }
+
+    override fun deleteChunks(messageId: String, chunkIndexes: Collection<Int>) = synchronized(lock) {
+        checkOpen()
+        val active = profile ?: return@synchronized
+        if (chunkIndexes.isEmpty()) return@synchronized
+        database.beginTransaction()
+        try {
+            for (index in chunkIndexes) {
+                database.execSQL(
+                    "DELETE FROM $TABLE_CHUNKS WHERE profile_id = ? AND message_id = ? AND chunk_index = ?",
+                    arrayOf(active.id, messageId, index.toString())
+                )
+            }
+            database.setTransactionSuccessful()
+        } finally {
+            database.endTransaction()
+        }
+    }
+
     override fun deleteConversation(conversationId: String) = synchronized(lock) {
         checkOpen()
         val active = profile ?: return@synchronized
