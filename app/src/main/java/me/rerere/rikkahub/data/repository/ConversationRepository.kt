@@ -39,8 +39,8 @@ import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.index.EmbeddingClient
 import me.rerere.rikkahub.data.index.EmbeddingTarget
-import me.rerere.rikkahub.data.index.IndexTaskScheduler
 import me.rerere.rikkahub.data.index.HistorySearchOutcome
+import me.rerere.rikkahub.data.index.IndexTaskScheduler
 import me.rerere.rikkahub.data.index.IndexableText
 import me.rerere.rikkahub.data.index.RankedFusion
 import me.rerere.rikkahub.data.index.RecallSource
@@ -335,7 +335,9 @@ class ConversationRepository(
         return if (entity != null) {
             val nodes = loadMessageNodes(entity.id)
             conversationEntityToConversation(entity, nodes)
-        } else null
+        } else {
+            null
+        }
     }
 
     suspend fun existsConversationById(uuid: Uuid): Boolean {
@@ -454,8 +456,11 @@ class ConversationRepository(
             }
         }
 
-        val rawCandidates = if (plan.rawQuery.isBlank()) emptyList() else
+        val rawCandidates = if (plan.rawQuery.isBlank()) {
+            emptyList()
+        } else {
             buildRouteCandidates(HistorySearchRoute.RAW, listOf(searchRoute(plan.rawQuery)))
+        }
         val segmentResults = mutableListOf<List<MessageSearchResult>>()
         for (query in plan.segmentQueries) segmentResults += searchRoute(query)
         val segmentCandidates = buildRouteCandidates(
@@ -505,7 +510,12 @@ class ConversationRepository(
         return selectHistorySearchCandidates(
             fresh,
             requestedLimit = normalizedLimit,
-            perConversationLimit = if (focusConversationId == null) HISTORY_SEARCH_PER_CONVERSATION_LIMIT else normalizedLimit,
+            perConversationLimit = if (focusConversationId ==
+                null) {
+                HISTORY_SEARCH_PER_CONVERSATION_LIMIT
+            } else {
+                normalizedLimit
+            },
         )
     }
 
@@ -551,14 +561,21 @@ class ConversationRepository(
         val target = settings.resolveEmbeddingTarget()
         if (target == null) {
             return fallbackOutcome(
-                filtered, normalizedLimit, focusConversationId, normalizedOffset,
+                filtered,
+                normalizedLimit,
+                focusConversationId,
+                normalizedOffset,
                 if (settings.embeddingIndex.enabled) SemanticState.NOT_CONFIGURED else SemanticState.DISABLED
             )
         }
         // 路径、错误码这类精确查询已经被词法高置信命中，不用再花一次 embedding
         if (StructuralQuery.isStructural(keyword) && filtered.isNotEmpty()) {
             return fallbackOutcome(
-                filtered, normalizedLimit, focusConversationId, normalizedOffset, SemanticState.SKIPPED_EXACT
+                filtered,
+                normalizedLimit,
+                focusConversationId,
+                normalizedOffset,
+                SemanticState.SKIPPED_EXACT
             )
         }
 
@@ -576,7 +593,11 @@ class ConversationRepository(
         )
         if (vectorOutcome.second != SemanticState.OK && vectorOutcome.second != SemanticState.INDEXING) {
             return fallbackOutcome(
-                filtered, normalizedLimit, focusConversationId, normalizedOffset, vectorOutcome.second
+                filtered,
+                normalizedLimit,
+                focusConversationId,
+                normalizedOffset,
+                vectorOutcome.second
             )
         }
         val vectorResults = vectorOutcome.first
@@ -745,12 +766,16 @@ class ConversationRepository(
             val messages = conversation.messageNodes.subList(start, end + 1).mapIndexedNotNull { offset, node ->
                 val message = node.currentMessage
                 val text = message.toText().trim()
-                if (text.isBlank()) null else ConversationHistoryReadMessage(
-                    role = message.role,
-                    createdAt = message.createdAt.toString(),
-                    text = text,
-                    isMatch = start + offset == nodeIndex,
-                )
+                if (text.isBlank()) {
+                    null
+                } else {
+                    ConversationHistoryReadMessage(
+                        role = message.role,
+                        createdAt = message.createdAt.toString(),
+                        text = text,
+                        isMatch = start + offset == nodeIndex,
+                    )
+                }
             }
             if (messages.none { it.isMatch }) return@mapNotNull null
             ConversationHistoryReadResult(ref.toString(), conversation.id, conversation.title, messages)
@@ -824,7 +849,7 @@ class ConversationRepository(
         return ConversationEntity(
             id = conversation.id.toString(),
             title = conversation.title,
-            nodes = "[]",  // nodes 现在存储在单独的表中
+            nodes = "[]", // nodes 现在存储在单独的表中
             createAt = conversation.createAt.toEpochMilli(),
             updateAt = conversation.updateAt.toEpochMilli(),
             assistantId = conversation.assistantId.toString(),
