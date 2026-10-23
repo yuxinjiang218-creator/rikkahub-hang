@@ -18,7 +18,7 @@ data class EmbeddingTarget(
     val provider: ProviderSetting.OpenAI,
     val model: Model
 ) {
-    val fingerprint: String = "${providerName}:${provider.baseUrl}"
+    val fingerprint: String = "$providerName:${provider.baseUrl}"
 }
 
 /** 从设置里解析出可用的 embedding 目标，未启用或模型不合法时返回 null */
