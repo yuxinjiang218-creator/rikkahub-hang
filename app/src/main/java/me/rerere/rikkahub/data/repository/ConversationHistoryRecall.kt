@@ -167,9 +167,12 @@ fun mergeHistoryRouteCandidates(
             aggregate.bestTokenMatches = maxOf(aggregate.bestTokenMatches, candidate.matchedTokenCount)
         }
     }
-    return merged.values.sortedWith(compareByDescending<MergeAggregate> { it.score }
-        .thenByDescending { it.hasRawHit }.thenByDescending { it.bestTokenMatches }
-        .thenByDescending { it.routeCount }.thenByDescending { it.result.createdAt }
+    return merged.values
+        .sortedWith(
+            compareByDescending<MergeAggregate> { it.score }
+                .thenByDescending { it.hasRawHit }.thenByDescending { it.bestTokenMatches }
+                .thenByDescending { it.routeCount }.thenByDescending { it.result.createdAt }
+        )
         .map { aggregate -> aggregate.result.copy(matchedBy = aggregate.sources) }
 }
 
