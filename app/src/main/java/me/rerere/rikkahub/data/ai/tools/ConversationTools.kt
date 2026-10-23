@@ -111,6 +111,7 @@ private fun historySearchTool(
         Results are grouped by conversation. Use a returned ref to read original surrounding messages, or conversation_id to search within one conversation.
         Search candidates first, then use `read_chat_history` only when you need original context.
         Older search and read results are compacted in later requests; search or read again when you need them.
+        `semantic_search` reports whether semantic recall took part (ok, disabled, indexing, failed...); use `offset` with `has_more` to page through more results.
     """.trimIndent(),
     parameters = {
         InputSchema.Obj(

@@ -538,7 +538,8 @@ class ConversationRepository(
         if (keyword.isBlank()) return HistorySearchOutcome(emptyList(), SemanticState.DISABLED)
         val normalizedLimit = normalizeHistorySearchLimit(limit)
         val normalizedOffset = offset.coerceAtLeast(0)
-        val fetchLimit = historyFetchLimit(normalizedLimit)
+        // 翻页要的是第 offset+limit 名，取数上限也必须照这个来，否则第二页会空
+        val fetchLimit = historyFetchLimit(normalizedLimit + normalizedOffset)
         val routes = collectHistoryRouteCandidates(
             assistantId = assistantId,
             keyword = keyword,
@@ -546,7 +547,16 @@ class ConversationRepository(
             focusConversationId = focusConversationId,
             role = role,
             fetchLimit = fetchLimit,
-        )
+        ).map { (route, candidates) ->
+            // 已经返回过的片段在进融合之前就要剔掉，否则 RRF 还会把它们排上来
+            route to candidates.filter { candidate ->
+                val key = historySnippetKey(
+                    historySearchResultRef(candidate.result),
+                    candidate.result.snippet
+                )
+                key == null || key !in excludeSnippetKeys
+            }
+        }
         val lexicalRoutes = routes.map { (route, candidates) ->
             route.toRecallSource() to candidates.map { candidate -> candidate.result }
         }
@@ -637,7 +647,7 @@ class ConversationRepository(
         return HistorySearchOutcome(
             results = selected.drop(offset),
             semanticState = state,
-            hasMore = lexical.size > offset + selected.size,
+            hasMore = lexical.size > selected.size,
         )
     }
 
@@ -718,7 +728,8 @@ class ConversationRepository(
                 matchedBy = setOf(RecallSource.VECTOR),
             )
         }
-        return matched to SemanticState.OK
+        // 还有会话排在索引队列里，这次结果是不完整的，得如实告诉模型
+        return matched to if (excludeConversationIds.isEmpty()) SemanticState.OK else SemanticState.INDEXING
     }
 
     private fun buildVectorSnippet(text: String, start: Int, end: Int): String {

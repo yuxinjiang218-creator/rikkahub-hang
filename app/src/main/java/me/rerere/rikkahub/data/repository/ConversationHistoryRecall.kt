@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.repository
 
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.data.db.fts.MessageSearchResult
+import me.rerere.rikkahub.data.index.RecallSource
 import java.util.Locale
 import kotlin.uuid.Uuid
 
@@ -161,13 +162,15 @@ fun mergeHistoryRouteCandidates(
             aggregate.result = chooseBetterResult(aggregate.result, candidate.result)
             aggregate.score += weight / (HISTORY_RRF_K + index + 1.0)
             aggregate.routeCount++
+            aggregate.sources += candidate.route.toRecallSource()
             aggregate.hasRawHit = aggregate.hasRawHit || candidate.route == HistorySearchRoute.RAW
             aggregate.bestTokenMatches = maxOf(aggregate.bestTokenMatches, candidate.matchedTokenCount)
         }
     }
     return merged.values.sortedWith(compareByDescending<MergeAggregate> { it.score }
         .thenByDescending { it.hasRawHit }.thenByDescending { it.bestTokenMatches }
-        .thenByDescending { it.routeCount }.thenByDescending { it.result.createdAt }).map { it.result }
+        .thenByDescending { it.routeCount }.thenByDescending { it.result.createdAt }
+        .map { aggregate -> aggregate.result.copy(matchedBy = aggregate.sources) }
 }
 
 fun selectHistorySearchCandidates(
@@ -183,6 +186,12 @@ fun selectHistorySearchCandidates(
             true
         }
     }.take(normalizeHistorySearchLimit(requestedLimit))
+}
+
+private fun HistorySearchRoute.toRecallSource(): RecallSource = when (this) {
+    HistorySearchRoute.RAW -> RecallSource.RAW
+    HistorySearchRoute.SEGMENT -> RecallSource.SEGMENT
+    HistorySearchRoute.TOKEN -> RecallSource.TOKEN
 }
 
 fun historySearchResultRef(result: MessageSearchResult) = "${result.conversationId}:${result.nodeId}:${result.messageId}"
@@ -230,6 +239,7 @@ private data class MergeAggregate(
     var routeCount: Int = 0,
     var hasRawHit: Boolean = false,
     var bestTokenMatches: Int = 0,
+    val sources: MutableSet<RecallSource> = mutableSetOf(),
 )
 
 private fun historyResultKey(result: MessageSearchResult) = "${result.conversationId}:${result.nodeId}:${result.messageId}"

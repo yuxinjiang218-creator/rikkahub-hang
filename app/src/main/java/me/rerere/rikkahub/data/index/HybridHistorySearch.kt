@@ -97,6 +97,6 @@ fun fuseHistoryResults(
     return HistorySearchOutcome(
         results = page,
         semanticState = SemanticState.OK,
-        hasMore = fused.size > offset + selected.size
+        hasMore = fused.size > selected.size
     )
 }
