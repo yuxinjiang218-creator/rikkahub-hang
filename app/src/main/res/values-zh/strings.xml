@@ -1735,4 +1735,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_semantic_entry_off">未开启</string>
   <string name="setting_semantic_entry_no_model">未选模型</string>
   <string name="setting_semantic_entry_on">已开启</string>
+
+  <string name="search_index_building">正在建立索引 %1$d/%2$d 个会话…</string>
+  <string name="search_index_building_simple">正在建立聊天记录索引…</string>
 </resources>

@@ -1733,4 +1733,7 @@ Embeddings are produced by a paid API, so this can cost money and take a while.<
   <string name="setting_semantic_entry_off">Off</string>
   <string name="setting_semantic_entry_no_model">No model</string>
   <string name="setting_semantic_entry_on">On</string>
+
+  <string name="search_index_building">Indexing %1$d/%2$d conversations…</string>
+  <string name="search_index_building_simple">Indexing chat history…</string>
 </resources>

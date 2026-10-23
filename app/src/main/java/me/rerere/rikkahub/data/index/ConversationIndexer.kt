@@ -61,8 +61,13 @@ class ConversationIndexer(
                 return@withContext ProcessResult(hasMore = false, deferred = false)
             }
             val store = vectorIndexProvider.get()
-            val total = conversationIndexTaskDao.count()
-            statusTracker.start(total)
+            // 没有待办就直接收工，不要闪一下“正在建立索引”
+            val pendingTotal = conversationIndexTaskDao.count()
+            if (pendingTotal <= 0) {
+                return@withContext ProcessResult(hasMore = false, deferred = false)
+            }
+            // 总数只在本次执行开头定一次：任务处理完会被删掉，每批重新 count 会让分母缩水、进度倒退
+            statusTracker.startIfNeeded(pendingTotal)
             var processed = 0
             val deferred = HashSet<String>()
             while (processed < maxConversations) {
@@ -80,7 +85,7 @@ class ConversationIndexer(
                     continue
                 }
                 processed++
-                statusTracker.progress(processed, total)
+                statusTracker.advance()
             }
             // 只要队列里还有“不是本轮失败项”的任务，就说明这轮是被批次上限截断的，
             // 应该接着干；只有剩下的全是失败项时才收工
@@ -89,12 +94,10 @@ class ConversationIndexer(
             } else {
                 conversationIndexTaskDao.pendingConversationIds().any { it !in deferred }
             }
+            // 这里只记原因，不结束执行：worker 可能还要接着下一批
             if (deferred.isNotEmpty()) {
-                Log.i(TAG, "本轮跳过 ${deferred.size} 个会话，等待退避重试")
-                statusTracker.noteError("${deferred.size} 个会话本轮没能完成，稍后自动重试")
-                statusTracker.idle()
-            } else {
-                statusTracker.success()
+                Log.i(TAG, "本批跳过 ${deferred.size} 个会话，等待退避重试")
+                statusTracker.noteError("${deferred.size} 个会话本次没能完成，稍后自动重试")
             }
             ProcessResult(hasMore = remaining, deferred = deferred.isNotEmpty())
         }

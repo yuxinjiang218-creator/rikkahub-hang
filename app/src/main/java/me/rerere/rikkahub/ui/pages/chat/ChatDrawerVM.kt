@@ -27,6 +27,7 @@ import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.datastore.ConversationSortOrder
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.index.IndexStatusTracker
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Folder
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -45,6 +46,7 @@ class ChatDrawerVM(
     private val folderRepo: FolderRepository,
     private val chatService: ChatService,
     private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
+    private val indexStatusTracker: IndexStatusTracker,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -73,6 +75,15 @@ class ChatDrawerVM(
             if (memoryId == null) flowOf(false) else memoryConsolidationScheduler.statusOf(memoryId).map { it.running }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    // 向量索引的进度。和上面的记忆整理是两件独立的事，所以单独一条，
+    // 同时在跑时也各显示各的，不会互相顶掉
+    val indexBuilding: StateFlow<IndexStatusTracker.Status> = indexStatusTracker.status
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            IndexStatusTracker.Status()
+        )
 
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(assistantIdFlow, _selectedFolderId, sortOrderFlow) { assistantId, folderId, sortOrder ->
