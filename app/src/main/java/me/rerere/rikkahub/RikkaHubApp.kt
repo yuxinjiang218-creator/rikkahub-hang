@@ -317,10 +317,10 @@ class RikkaHubApp : Application() {
 }
 
 class AppScope : CoroutineScope by CoroutineScope(
-    SupervisorJob()
-        + Dispatchers.Main
-        + CoroutineName("AppScope")
-        + CoroutineExceptionHandler { _, e ->
-        Log.e(TAG, "AppScope exception", e)
-    }
+    SupervisorJob() +
+        Dispatchers.Main +
+        CoroutineName("AppScope") +
+        CoroutineExceptionHandler { _, e ->
+            Log.e(TAG, "AppScope exception", e)
+        }
 )
