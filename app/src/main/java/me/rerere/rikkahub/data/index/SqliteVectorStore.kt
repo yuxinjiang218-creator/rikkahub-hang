@@ -125,6 +125,15 @@ class SqliteVectorStore private constructor(
         signatures
     }
 
+    override fun conversationAssistantId(conversationId: String): String? = synchronized(lock) {
+        checkOpen()
+        val active = profile ?: return@synchronized null
+        database.rawQuery(
+            "SELECT assistant_id FROM $TABLE_CHUNKS WHERE profile_id = ? AND conversation_id = ? LIMIT 1",
+            arrayOf(active.id, conversationId)
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+    }
+
     override fun deleteChunks(messageId: String, chunkIndexes: Collection<Int>) = synchronized(lock) {
         checkOpen()
         val active = profile ?: return@synchronized

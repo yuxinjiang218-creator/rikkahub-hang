@@ -101,6 +101,9 @@ interface VectorIndex {
     /** 会话内每块的签名（"messageId#chunkIndex" -> contentHash），用于跳过没变的重新计算 */
     fun chunkSignatures(conversationId: String): Map<String, String>
 
+    /** 该会话已有向量归属的助手 id；会话没索引过时返回 null */
+    fun conversationAssistantId(conversationId: String): String?
+
     fun deleteConversation(conversationId: String)
 
     fun deleteMessage(messageId: String)

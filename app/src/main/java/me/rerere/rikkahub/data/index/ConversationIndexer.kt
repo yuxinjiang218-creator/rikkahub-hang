@@ -113,6 +113,12 @@ class ConversationIndexer(
         // 先定 profile：profile 变了会清库，之后读到的签名才是当前的
         store.ensureProfile(profile)
 
+        // 会话换助手会改变它的可见范围（检索按 assistant 过滤），旧记录必须整体作废
+        val existingAssistant = store.conversationAssistantId(conversationKey)
+        if (existingAssistant != null && existingAssistant != conversation.assistantId.toString()) {
+            Log.i(TAG, "会话 $conversationKey 换了助手，清掉旧向量重来")
+            store.deleteConversation(conversationKey)
+        }
         val existing = store.chunkSignatures(conversationKey)
         val currentKeys = HashSet<String>()
         val pending = ArrayList<PendingChunk>()

@@ -7,6 +7,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -177,6 +178,24 @@ class SqliteVectorStoreTest {
         assertThrows(IllegalArgumentException::class.java) {
             store.search(wrong, limit = 5)
         }
+    }
+
+    @Test
+    fun conversationAssistantIdReflectsStoredRows() {
+        store.ensureProfile(profile())
+        assertNull("没索引过的会话应该是 null", store.conversationAssistantId("conv-1"))
+
+        store.upsert(
+            listOf(
+                record("m1", unitVector(Random(1), dimension), assistantId = "assistant-7"),
+                record("m2", unitVector(Random(2), dimension), assistantId = "assistant-7"),
+            )
+        )
+
+        // 会话换助手时要靠它判断旧向量得整体作废
+        assertEquals("assistant-7", store.conversationAssistantId("conv-1"))
+        store.deleteConversation("conv-1")
+        assertNull(store.conversationAssistantId("conv-1"))
     }
 
     @Test

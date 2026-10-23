@@ -7,7 +7,25 @@ on:
       - main
       - 'feat/**'
       - 'codex/**'
+    # 只有碰到向量索引/原生库/数据库/依赖时才值得起模拟器，
+    # 改个 UI 或文案没必要烧十几分钟
+    paths:
+      - 'app/src/main/java/me/rerere/rikkahub/data/index/**'
+      - 'app/src/main/java/me/rerere/rikkahub/data/db/**'
+      - 'app/src/androidTest/**'
+      - 'app/build.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - 'gradle/**'
+      - '.github/workflows/android-test.yml'
   pull_request:
+    paths:
+      - 'app/src/main/java/me/rerere/rikkahub/data/index/**'
+      - 'app/src/main/java/me/rerere/rikkahub/data/db/**'
+      - 'app/src/androidTest/**'
+      - 'app/build.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - 'gradle/**'
+      - '.github/workflows/android-test.yml'
 
 concurrency:
   group: android-test-${{ github.ref }}
