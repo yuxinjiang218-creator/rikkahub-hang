@@ -31,6 +31,7 @@ import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.index.ConversationIndexer
 import me.rerere.rikkahub.data.index.EmbeddingClient
+import me.rerere.rikkahub.data.index.IndexStatusTracker
 import me.rerere.rikkahub.data.index.IndexTaskScheduler
 import me.rerere.rikkahub.data.index.VectorIndexProvider
 import me.rerere.rikkahub.data.remote.RemoteFileStore
@@ -156,8 +157,10 @@ val dataSourceModule = module {
         IndexTaskScheduler(get())
     }
 
+    single { IndexStatusTracker() }
+
     single {
-        ConversationIndexer(get(), get(), get(), get(), get())
+        ConversationIndexer(get(), get(), get(), get(), get(), get())
     }
 
     single { McpManager(settingsStore = get(), appScope = get(), filesManager = get()) }

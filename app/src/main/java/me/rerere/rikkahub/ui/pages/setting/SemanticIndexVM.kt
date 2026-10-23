@@ -12,6 +12,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.index.ConversationIndexer
+import me.rerere.rikkahub.data.index.IndexStatusTracker
 import me.rerere.rikkahub.data.index.IndexTaskScheduler
 import me.rerere.rikkahub.data.index.VectorIndexProvider
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -30,6 +31,12 @@ data class SemanticIndexUiState(
     val ftsProgress: Int = 0,
     val ftsTotal: Int = 0,
     val busy: Boolean = false,
+    /** 后台是否正在索引，以及进度 */
+    val workerRunning: Boolean = false,
+    val workerProcessed: Int = 0,
+    val workerTotal: Int = 0,
+    /** 最近一次失败原因，跑通一轮后自动清空 */
+    val lastError: String? = null,
 )
 
 /**
@@ -44,6 +51,7 @@ class SemanticIndexVM(
     private val conversationIndexer: ConversationIndexer,
     private val conversationRepository: ConversationRepository,
     private val indexTaskScheduler: IndexTaskScheduler,
+    private val indexStatusTracker: IndexStatusTracker,
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
 
@@ -59,6 +67,20 @@ class SemanticIndexVM(
                     instruction = settings.embeddingIndex.instruction,
                     ftsRebuilding = conversationRepository.ftsRebuildState.value.running,
                 )
+            }
+        }
+        // 后台干活的进度和失败原因直接从 tracker 读，页面不用轮询
+        viewModelScope.launch {
+            indexStatusTracker.status.collect { status ->
+                val wasRunning = _state.value.workerRunning
+                _state.value = _state.value.copy(
+                    workerRunning = status.running,
+                    workerProcessed = status.processed,
+                    workerTotal = status.total,
+                    lastError = status.lastError,
+                )
+                // 跑完一轮，计数已经变了，顺手把数字刷一次
+                if (wasRunning && !status.running) refresh()
             }
         }
         refresh()

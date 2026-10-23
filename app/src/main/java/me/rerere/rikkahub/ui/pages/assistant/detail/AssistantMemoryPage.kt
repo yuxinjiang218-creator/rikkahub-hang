@@ -2,11 +2,6 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import android.text.format.DateUtils
 import androidx.annotation.StringRes
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.Brain02
-import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.Settings03
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,14 +42,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Brain02
+import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.model.groupByDirectory
 import me.rerere.rikkahub.data.model.memoryTitleOf
-import kotlinx.coroutines.launch
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -68,6 +69,7 @@ import me.rerere.rikkahub.ui.pages.memory.resultText
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -169,6 +171,15 @@ private fun MemorySettingsTab(
 ) {
     var showTimeReminderIntervalDialog by remember(assistant.id) { mutableStateOf(false) }
     var timeReminderIntervalInput by remember(assistant.id) { mutableStateOf("") }
+    val navController = LocalNavController.current
+    val settingsStore: SettingsStore = koinInject()
+    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    // 语义检索是全局开关，这里只做状态提示，避免用户以为它跟着助手走
+    val semanticStatusText = when {
+        !settings.embeddingIndex.enabled -> stringResource(R.string.setting_semantic_entry_off)
+        settings.embeddingIndex.modelId == null -> stringResource(R.string.setting_semantic_entry_no_model)
+        else -> stringResource(R.string.setting_semantic_entry_on)
+    }
 
     if (showTimeReminderIntervalDialog) {
         val interval = timeReminderIntervalInput.toIntOrNull()?.takeIf { it > 0 }
@@ -265,6 +276,21 @@ private fun MemorySettingsTab(
                 supportingContent = { Text(stringResource(R.string.assistant_page_recent_chats_desc)) },
                 headlineContent = { Text(stringResource(R.string.assistant_page_recent_chats)) },
             )
+            // 只有允许参考历史记录时，语义检索才有意义，所以跟着它出现/消失
+            if (assistant.enableRecentChatsReference) {
+                item(
+                    onClick = { navController.navigate(Screen.SettingSemanticIndex) },
+                    supportingContent = { Text(stringResource(R.string.setting_semantic_entry_desc)) },
+                    headlineContent = { Text(stringResource(R.string.setting_semantic_entry_title)) },
+                    trailingContent = {
+                        Text(
+                            text = semanticStatusText,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                )
+            }
         }
 
         CardGroup {

@@ -1688,4 +1688,49 @@
   <string name="setting_provider_page_device_code_hint">Confirm this code in the browser</string>
   <string name="setting_provider_page_device_code_reopen">Tap to open the page again</string>
   <string name="setting_provider_page_type_subscription">%s Subscription</string>
+  <!-- 语义检索（聊天历史向量索引） -->
+  <string name="setting_semantic_title">Semantic search</string>
+  <string name="setting_semantic_switch_section">Switch</string>
+  <string name="setting_semantic_enable">Semantic search</string>
+  <string name="setting_semantic_enable_desc">When on, chat text is sent to the selected model\'s provider to compute embeddings. When off, only the local keyword search is used and nothing leaves the device.</string>
+  <string name="setting_semantic_model_section">Embedding model</string>
+  <string name="setting_semantic_no_model">No embedding model available</string>
+  <string name="setting_semantic_no_model_desc">Add an OpenAI-compatible embedding model (type: EMBEDDING) in Providers first.</string>
+  <string name="setting_semantic_in_use">in use</string>
+  <string name="setting_semantic_instruction_section">Query instruction</string>
+  <string name="setting_semantic_instruction">Instruction (optional)</string>
+  <string name="setting_semantic_instruction_desc">Prepended to the query only. Stored document vectors are unaffected, so changing it does not require a rebuild.</string>
+  <string name="setting_semantic_save">Save</string>
+  <string name="setting_semantic_status_section">Index status</string>
+  <string name="setting_semantic_indexed">%1$d chunks / %2$d conversations indexed</string>
+  <string name="setting_semantic_cache_size">Cache size: %s</string>
+  <string name="setting_semantic_pending">%d conversations queued</string>
+  <string name="setting_semantic_progress">Indexing %1$d/%2$d conversations…</string>
+  <string name="setting_semantic_fts_progress">Rebuilding keyword index: %1$d/%2$d</string>
+  <string name="setting_semantic_last_error">Last error: %s</string>
+  <string name="setting_semantic_retry">Retry now</string>
+  <string name="setting_semantic_retry_desc">Start processing queued conversations without waiting for the debounce</string>
+  <string name="setting_semantic_rebuild">Rebuild index</string>
+  <string name="setting_semantic_rebuild_desc">Recompute every embedding. Keyword search keeps working meanwhile.</string>
+  <string name="setting_semantic_rebuild_confirm">All %d conversations will be re-embedded.
+
+Embeddings are produced by a paid API, so this can cost money and take a while.</string>
+  <string name="setting_semantic_rebuild_confirm_action">Rebuild</string>
+  <string name="setting_semantic_clear">Clear index</string>
+  <string name="setting_semantic_clear_desc">Delete the local vector cache only. No chat message is deleted.</string>
+  <string name="setting_semantic_clear_confirm">Delete the local vector cache? Chat history stays untouched; you can rebuild later.</string>
+  <string name="setting_semantic_switch_model">Switch model</string>
+  <string name="setting_semantic_switch_model_confirm">A different model means a different vector space. The current index will be cleared and rebuilt, which costs money.</string>
+  <string name="setting_semantic_continue">Continue</string>
+  <string name="setting_semantic_cancel">Cancel</string>
+  <string name="setting_semantic_cleared">Vector cache cleared</string>
+  <string name="setting_semantic_rebuild_queued">Rebuild queued</string>
+  <string name="setting_semantic_need_model">Pick an embedding model first, otherwise semantic search stays inactive</string>
+  <string name="setting_semantic_saved">Saved</string>
+  <string name="setting_semantic_retry_started">Retrying queued conversations</string>
+  <string name="setting_semantic_entry_title">Semantic search</string>
+  <string name="setting_semantic_entry_desc">Find things in your chat history by meaning, not just keywords. Requires an embedding model.</string>
+  <string name="setting_semantic_entry_off">Off</string>
+  <string name="setting_semantic_entry_no_model">No model</string>
+  <string name="setting_semantic_entry_on">On</string>
 </resources>

@@ -22,18 +22,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.switchItem
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
+import me.rerere.ui.components.RikkaConfirmDialog
+import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
 
 /**
  * 语义检索设置页。
  *
- * 说明写清楚：开启后聊天正文会发到所选模型的服务商去算向量，这是隐私面上的实质变化。
+ * 隐私层面要说清楚：开启后聊天正文会发到所选模型的服务商去算向量。
+ * 另外「重建」和「换模型」都要重算全部历史，是真花钱的操作，所以都加确认。
  */
 @Composable
 fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
@@ -41,12 +48,81 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val models = remember(settings.providers) { vm.embeddingModels(settings) }
+    val toaster = LocalToaster.current
     var instructionDraft by remember(state.instruction) { mutableStateOf(state.instruction) }
+    var showRebuildConfirm by remember { mutableStateOf(false) }
+    var showClearConfirm by remember { mutableStateOf(false) }
+    var pendingModelId by remember { mutableStateOf<kotlin.uuid.Uuid?>(null) }
+
+    fun notify(text: String, type: ToastType = ToastType.Normal) = toaster.show(text, type)
+
+    // 提示文案在 composable 作用域取好，确认框的回调里不能再调 stringResource
+    val msgCleared = stringResource(R.string.setting_semantic_cleared)
+    val msgRebuildQueued = stringResource(R.string.setting_semantic_rebuild_queued)
+    val msgNeedModel = stringResource(R.string.setting_semantic_need_model)
+    val msgSaved = stringResource(R.string.setting_semantic_saved)
+    val msgRetryStarted = stringResource(R.string.setting_semantic_retry_started)
+
+    RikkaConfirmDialog(
+        show = showRebuildConfirm,
+        title = stringResource(R.string.setting_semantic_rebuild),
+        text = {
+            Text(
+                stringResource(
+                    R.string.setting_semantic_rebuild_confirm,
+                    state.conversationCount,
+                )
+            )
+        },
+        confirmText = stringResource(R.string.setting_semantic_rebuild_confirm_action),
+        dismissText = stringResource(R.string.setting_semantic_cancel),
+        onConfirm = {
+            showRebuildConfirm = false
+            vm.rebuild()
+            notify(
+                "已开始重建，共 ${state.conversationCount} 个会话",
+                ToastType.Info,
+            )
+        },
+        onDismiss = { showRebuildConfirm = false },
+    )
+
+    RikkaConfirmDialog(
+        show = showClearConfirm,
+        title = stringResource(R.string.setting_semantic_clear),
+        text = { Text(stringResource(R.string.setting_semantic_clear_confirm)) },
+        confirmText = stringResource(R.string.setting_semantic_clear),
+        dismissText = stringResource(R.string.setting_semantic_cancel),
+        onConfirm = {
+            showClearConfirm = false
+            vm.clear()
+            notify(msgCleared, ToastType.Success)
+        },
+        onDismiss = { showClearConfirm = false },
+    )
+
+    // 换模型等于换向量空间，会清库重算，先问一句
+    RikkaConfirmDialog(
+        show = pendingModelId != null,
+        title = stringResource(R.string.setting_semantic_switch_model),
+        text = { Text(stringResource(R.string.setting_semantic_switch_model_confirm)) },
+        confirmText = stringResource(R.string.setting_semantic_continue),
+        dismissText = stringResource(R.string.setting_semantic_cancel),
+        onConfirm = {
+            val id = pendingModelId
+            pendingModelId = null
+            if (id != null) {
+                vm.setModel(id)
+                notify(msgRebuildQueued, ToastType.Info)
+            }
+        },
+        onDismiss = { pendingModelId = null },
+    )
 
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text("语义检索") },
+                title = { Text(stringResource(R.string.setting_semantic_title)) },
                 navigationIcon = { BackButton() },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors
@@ -61,44 +137,55 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                CardGroup(title = { Text("开关") }) {
-                    item(
-                        onClick = { vm.setEnabled(!state.enabled) },
-                        headlineContent = { Text(if (state.enabled) "已开启语义检索" else "开启语义检索") },
-                        supportingContent = {
-                            Text(
-                                "开启后，聊天正文会被发送到所选模型的服务商来生成向量；" +
-                                    "关闭时只用本地的关键词搜索，不发出任何内容。"
-                            )
-                        },
-                        trailingContent = {
-                            TextButton(onClick = { vm.setEnabled(!state.enabled) }) {
-                                Text(if (state.enabled) "关闭" else "开启")
+                CardGroup(title = { Text(stringResource(R.string.setting_semantic_switch_section)) }) {
+                    switchItem(
+                        checked = state.enabled,
+                        onCheckedChange = { enabled ->
+                            vm.setEnabled(enabled)
+                            if (enabled && state.modelId == null) {
+                                notify(
+                                    msgNeedModel,
+                                    ToastType.Warning,
+                                )
                             }
-                        }
+                        },
+                        headlineContent = { Text(stringResource(R.string.setting_semantic_enable)) },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_semantic_enable_desc))
+                        },
                     )
                 }
             }
 
             item {
-                CardGroup(title = { Text("Embedding 模型") }) {
+                CardGroup(title = { Text(stringResource(R.string.setting_semantic_model_section)) }) {
                     if (models.isEmpty()) {
                         item(
-                            headlineContent = { Text("没有可用的向量模型") },
+                            headlineContent = { Text(stringResource(R.string.setting_semantic_no_model)) },
                             supportingContent = {
-                                Text("请先在服务商里添加一个 OpenAI 兼容的 Embedding 模型（类型选 EMBEDDING）。")
+                                Text(stringResource(R.string.setting_semantic_no_model_desc))
                             }
                         )
                     } else {
                         models.forEach { (provider, model) ->
                             val selected = state.modelId == model.id
                             item(
-                                onClick = { vm.setModel(model.id) },
+                                onClick = {
+                                    when {
+                                        selected -> Unit
+                                        // 有既往索引才需要确认，首次选择直接生效
+                                        state.chunkCount > 0 -> pendingModelId = model.id
+                                        else -> {
+                                            vm.setModel(model.id)
+                                            notify(msgRebuildQueued, ToastType.Info)
+                                        }
+                                    }
+                                },
                                 headlineContent = { Text(model.displayName.ifBlank { model.modelId }) },
                                 supportingContent = {
                                     Text(
                                         "${provider.name} · ${model.modelId}" +
-                                            if (selected) " · 当前使用" else ""
+                                            if (selected) " · " + stringResource(R.string.setting_semantic_in_use) else ""
                                     )
                                 }
                             )
@@ -108,11 +195,11 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
             }
 
             item {
-                CardGroup(title = { Text("查询指令前缀") }) {
+                CardGroup(title = { Text(stringResource(R.string.setting_semantic_instruction_section)) }) {
                     formItem(
-                        headlineContent = { Text("指令（可留空）") },
+                        headlineContent = { Text(stringResource(R.string.setting_semantic_instruction)) },
                         supportingContent = {
-                            Text("只加在查询这一侧，不改已存的文档向量；改了它不需要重建索引。")
+                            Text(stringResource(R.string.setting_semantic_instruction_desc))
                         },
                         content = {
                             OutlinedTextField(
@@ -121,14 +208,20 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 8.dp),
-                                label = { Text("Instruct: ...") }
+                                label = { Text("Instruct: ...") },
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.End
                             ) {
-                                TextButton(onClick = { vm.setInstruction(instructionDraft) }) {
-                                    Text("保存")
+                                TextButton(
+                                    enabled = instructionDraft != state.instruction,
+                                    onClick = {
+                                        vm.setInstruction(instructionDraft)
+                                        notify(msgSaved, ToastType.Success)
+                                    },
+                                ) {
+                                    Text(stringResource(R.string.setting_semantic_save))
                                 }
                             }
                         }
@@ -137,42 +230,77 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
             }
 
             item {
-                CardGroup(title = { Text("索引状态") }) {
+                CardGroup(title = { Text(stringResource(R.string.setting_semantic_status_section)) }) {
                     item(
                         headlineContent = {
-                            Text("已索引 ${state.chunkCount} 块 / ${state.conversationCount} 个会话")
+                            Text(
+                                stringResource(
+                                    R.string.setting_semantic_indexed,
+                                    state.chunkCount,
+                                    state.conversationCount,
+                                )
+                            )
                         },
                         supportingContent = {
-                            Column {
-                                Text("缓存占用 ${formatBytes(state.cacheSizeBytes)}")
-                                Text("待处理任务 ${state.pendingConversations} 个会话")
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    stringResource(
+                                        R.string.setting_semantic_cache_size,
+                                        formatBytes(state.cacheSizeBytes),
+                                    )
+                                )
+                                Text(
+                                    stringResource(
+                                        R.string.setting_semantic_pending,
+                                        state.pendingConversations,
+                                    )
+                                )
+                                if (state.workerRunning) {
+                                    Text(
+                                        stringResource(
+                                            R.string.setting_semantic_progress,
+                                            state.workerProcessed,
+                                            state.workerTotal,
+                                        ),
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                                 if (state.ftsRebuilding) {
-                                    Text("关键词索引正在重建：${state.ftsProgress}/${state.ftsTotal}")
+                                    Text(
+                                        stringResource(
+                                            R.string.setting_semantic_fts_progress,
+                                            state.ftsProgress,
+                                            state.ftsTotal,
+                                        )
+                                    )
+                                }
+                                state.lastError?.let { error ->
+                                    Text(
+                                        text = stringResource(R.string.setting_semantic_last_error, error),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
                                 }
                             }
                         }
                     )
                     item(
-                        onClick = { vm.retryNow() },
-                        headlineContent = { Text("立即重试") },
-                        supportingContent = { Text("不等防抖，马上开始处理待办任务") }
+                        onClick = {
+                            vm.retryNow()
+                            notify(msgRetryStarted, ToastType.Info)
+                        },
+                        headlineContent = { Text(stringResource(R.string.setting_semantic_retry)) },
+                        supportingContent = { Text(stringResource(R.string.setting_semantic_retry_desc)) },
                     )
                     item(
-                        onClick = { vm.rebuild() },
-                        headlineContent = { Text("重建索引") },
-                        supportingContent = { Text("清空后重新生成全部向量，重建期间仍可用关键词搜索") }
+                        onClick = { showRebuildConfirm = true },
+                        headlineContent = { Text(stringResource(R.string.setting_semantic_rebuild)) },
+                        supportingContent = { Text(stringResource(R.string.setting_semantic_rebuild_desc)) },
                     )
                     item(
-                        onClick = { vm.clear() },
-                        headlineContent = { Text("清理索引") },
-                        supportingContent = { Text("只删除本地向量缓存，不删除任何聊天记录") }
+                        onClick = { showClearConfirm = true },
+                        headlineContent = { Text(stringResource(R.string.setting_semantic_clear)) },
+                        supportingContent = { Text(stringResource(R.string.setting_semantic_clear_desc)) },
                     )
-                }
-            }
-
-            if (state.busy) {
-                item {
-                    Text("处理中…", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

@@ -27,6 +27,7 @@ class ConversationIndexer(
     private val settingsStore: SettingsStore,
     private val embeddingClient: EmbeddingClient,
     private val vectorIndexProvider: VectorIndexProvider,
+    private val statusTracker: IndexStatusTracker,
 ) {
     /**
      * 每个“端点+模型配置”一进程只探一次维度。
@@ -60,6 +61,8 @@ class ConversationIndexer(
                 return@withContext ProcessResult(hasMore = false, deferred = false)
             }
             val store = vectorIndexProvider.get()
+            val total = conversationIndexTaskDao.count()
+            statusTracker.start(total)
             var processed = 0
             val deferred = HashSet<String>()
             while (processed < maxConversations) {
@@ -77,6 +80,7 @@ class ConversationIndexer(
                     continue
                 }
                 processed++
+                statusTracker.progress(processed, total)
             }
             // 只要队列里还有“不是本轮失败项”的任务，就说明这轮是被批次上限截断的，
             // 应该接着干；只有剩下的全是失败项时才收工
@@ -87,6 +91,10 @@ class ConversationIndexer(
             }
             if (deferred.isNotEmpty()) {
                 Log.i(TAG, "本轮跳过 ${deferred.size} 个会话，等待退避重试")
+                statusTracker.noteError("${deferred.size} 个会话本轮没能完成，稍后自动重试")
+                statusTracker.idle()
+            } else {
+                statusTracker.success()
             }
             ProcessResult(hasMore = remaining, deferred = deferred.isNotEmpty())
         }
@@ -214,6 +222,7 @@ class ConversationIndexer(
             val latest = settingsStore.awaitLoaded().resolveEmbeddingTarget()
             if (latest == null || latest.model.id != target.model.id) {
                 Log.i(TAG, "embedding 已被关闭或改配，停止本会话剩余批次")
+                statusTracker.noteError("语义检索已关闭或更换了模型，索引已暂停")
                 return false
             }
             if (store.activeProfileId() != expectedProfileId) {
@@ -224,6 +233,7 @@ class ConversationIndexer(
                 embeddingClient.embed(target, batch.map { it.text })
             } catch (error: Throwable) {
                 Log.w(TAG, "embedding 失败，本轮放弃: ${error.message}")
+                statusTracker.noteError("生成向量失败：${error.message ?: error::class.simpleName}")
                 return false
             }
             if (!isVersionCurrent(conversationKey, expectedVersion)) {
@@ -270,6 +280,7 @@ class ConversationIndexer(
             probe.firstOrNull()?.size?.takeIf { it > 0 }?.also { dimensionCache[target.fingerprint] = it }
         } catch (error: Throwable) {
             Log.w(TAG, "探测 embedding 维度失败: ${error.message}")
+            statusTracker.noteError("获取向量维度失败：${error.message ?: error::class.simpleName}")
             null
         }
     }

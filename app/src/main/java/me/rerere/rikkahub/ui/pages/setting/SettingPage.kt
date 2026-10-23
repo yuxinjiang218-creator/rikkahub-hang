@@ -256,11 +256,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingSemanticIndex) },
-                        supportingContent = { Text("聊天历史的语义检索：向量索引、模型与索引状态") },
-                        headlineContent = { Text("语义检索") },
-                    )
-                    item(
                         onClick = { navController.navigate(Screen.SettingWeb) },
                         leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
