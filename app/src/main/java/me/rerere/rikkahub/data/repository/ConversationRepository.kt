@@ -509,7 +509,8 @@ class ConversationRepository(
         }
         val pending = runCatching { conversationIndexTaskDao.pendingConversationIds().toSet() }
             .getOrDefault(emptySet())
-        val (vectorResults, state) = recallByEmbedding(
+        // 界面搜索：语义这一段出问题就静默退回纯词法，用户不需要知道
+        val recall = recallByEmbedding(
             keyword = keyword,
             target = target,
             assistantId = assistantId,
@@ -519,6 +520,8 @@ class ConversationRepository(
             fetchLimit = historyFetchLimit(lexical.size.coerceAtLeast(DEFAULT_HISTORY_SEARCH_LIMIT)),
             excludeConversationIds = pending,
         )
+        val vectorResults = recall.results
+        val state = recall.state
         if (state != SemanticState.OK && state != SemanticState.INDEXING) {
             return HistorySearchOutcome(lexical, state)
         }
@@ -673,18 +676,24 @@ class ConversationRepository(
             fetchLimit = fetchLimit,
             excludeConversationIds = pending,
         )
-        if (vectorOutcome.second != SemanticState.OK && vectorOutcome.second != SemanticState.INDEXING) {
+        // 工具路径：模型要知道语义这一段为什么没参与，否则它只会以为「搜不到」
+        if (vectorOutcome.state != SemanticState.OK && vectorOutcome.state != SemanticState.INDEXING) {
             return fallbackOutcome(
-                filtered,
-                normalizedLimit,
-                focusConversationId,
-                normalizedOffset,
-                vectorOutcome.second
+                lexical = filtered,
+                limit = normalizedLimit,
+                focusConversationId = focusConversationId,
+                offset = normalizedOffset,
+                state = vectorOutcome.state,
+                detail = vectorOutcome.detail,
             )
         }
-        val vectorResults = filterNewHistorySearchResults(vectorOutcome.first, excludeSnippetKeys)
+        val vectorResults = filterNewHistorySearchResults(vectorOutcome.results, excludeSnippetKeys)
         if (vectorResults.isEmpty() && filtered.isEmpty()) {
-            return HistorySearchOutcome(emptyList(), vectorOutcome.second)
+            return HistorySearchOutcome(
+                emptyList(),
+                vectorOutcome.state,
+                semanticDetail = vectorOutcome.detail,
+            )
         }
         val fused = fuseHistoryResults(
             lexicalRoutes = lexicalRoutes,
@@ -698,7 +707,10 @@ class ConversationRepository(
             },
             offset = normalizedOffset,
         )
-        return fused.copy(semanticState = vectorOutcome.second)
+        return fused.copy(
+            semanticState = vectorOutcome.state,
+            semanticDetail = vectorOutcome.detail,
+        )
     }
 
     private fun fallbackOutcome(
@@ -707,6 +719,7 @@ class ConversationRepository(
         focusConversationId: Uuid?,
         offset: Int,
         state: SemanticState,
+        detail: String? = null,
     ): HistorySearchOutcome {
         val selected = selectHistorySearchCandidates(
             lexical,
@@ -722,6 +735,7 @@ class ConversationRepository(
             results = selected.drop(offset),
             semanticState = state,
             hasMore = lexical.size > selected.size,
+            semanticDetail = detail,
         )
     }
 
@@ -735,7 +749,7 @@ class ConversationRepository(
         role: MessageRole?,
         fetchLimit: Int,
         excludeConversationIds: Set<String>,
-    ): Pair<List<MessageSearchResult>, SemanticState> {
+    ): RecallResult {
         val instruction = settingsStore.awaitLoaded().embeddingIndex.instruction
         val queryText = if (instruction.isBlank()) keyword else "$instruction\n$keyword"
         // 缓存 key 必须带上端点指纹（端点 + 自定义 headers/body）而不只是模型 id：
@@ -745,20 +759,31 @@ class ConversationRepository(
         val embedding = cached ?: try {
             withTimeoutOrNull(QUERY_EMBEDDING_TIMEOUT_MS) {
                 embeddingClient.embed(target, listOf(queryText)).firstOrNull()
-            } ?: return emptyList<MessageSearchResult>() to SemanticState.TIMEOUT
+            } ?: return RecallResult(
+                emptyList(),
+                SemanticState.TIMEOUT,
+                "查询向量超过 ${QUERY_EMBEDDING_TIMEOUT_MS}ms 未返回"
+            )
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Throwable) {
-            return emptyList<MessageSearchResult>() to SemanticState.FAILED
+            Log.w(TAG, "查询向量生成失败: ${error.message}")
+            return RecallResult(
+                emptyList(),
+                SemanticState.FAILED,
+                "查询向量生成失败：${error.message ?: error::class.simpleName}"
+            )
         }
         if (cached == null && embedding.isNotEmpty()) {
             if (queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_SIZE) queryEmbeddingCache.clear()
             queryEmbeddingCache[cacheKey] = embedding
         }
-        if (embedding.isEmpty()) return emptyList<MessageSearchResult>() to SemanticState.FAILED
+        if (embedding.isEmpty()) {
+            return RecallResult(emptyList(), SemanticState.FAILED, "服务商返回了空的向量")
+        }
 
         val store = runCatching { vectorIndexProvider.get() }.getOrNull()
-            ?: return emptyList<MessageSearchResult>() to SemanticState.NOT_CONFIGURED
+            ?: return RecallResult(emptyList(), SemanticState.NOT_CONFIGURED, "向量索引打不开")
         // 库里的 profile 必须就是当前设置该用的那个，否则拿新的查询向量去搜旧库只会得到垃圾
         val expectedProfile = VectorProfile(
             provider = target.fingerprint,
@@ -768,7 +793,11 @@ class ConversationRepository(
         )
         if (store.activeProfileId() != expectedProfile.id) {
             Log.i(TAG, "向量库 profile 与当前设置不一致，本次不做语义召回")
-            return emptyList<MessageSearchResult>() to SemanticState.INDEXING
+            return RecallResult(
+                emptyList(),
+                SemanticState.INDEXING,
+                "索引还没按当前模型重建，需要等待后台重建完成"
+            )
         }
         val hits = runCatching {
             store.search(
@@ -784,7 +813,11 @@ class ConversationRepository(
             )
         }.getOrElse {
             Log.w(TAG, "向量召回失败: ${it.message}")
-            return emptyList<MessageSearchResult>() to SemanticState.FAILED
+            return RecallResult(
+                emptyList(),
+                SemanticState.FAILED,
+                "向量召回失败：${it.message ?: it::class.simpleName}"
+            )
         }
         val conversations = mutableMapOf<Uuid, Conversation?>()
         val matched = ArrayList<MessageSearchResult>(hits.size)
@@ -817,8 +850,23 @@ class ConversationRepository(
             )
         }
         // 还有会话排在索引队列里，这次结果是不完整的，得如实告诉模型
-        return matched to if (excludeConversationIds.isEmpty()) SemanticState.OK else SemanticState.INDEXING
+        return if (excludeConversationIds.isEmpty()) {
+            RecallResult(matched, SemanticState.OK, null)
+        } else {
+            RecallResult(
+                matched,
+                SemanticState.INDEXING,
+                "还有 ${excludeConversationIds.size} 个会话在等待建索引，本次结果不含它们"
+            )
+        }
     }
+
+    /** 向量召回的结果 + 状态 + 失败原因（给模型看，不展示在界面上） */
+    private data class RecallResult(
+        val results: List<MessageSearchResult>,
+        val state: SemanticState,
+        val detail: String?,
+    )
 
     private fun buildVectorSnippet(text: String, start: Int, end: Int): String {
         val from = (start - 40).coerceAtLeast(0)

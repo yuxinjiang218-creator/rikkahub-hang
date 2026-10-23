@@ -190,6 +190,8 @@ private fun historySearchTool(
             put("role", roleRaw!!.lowercase())
             put("mode", if (focusedId == null) "conversation_groups" else "messages")
             put("semantic_search", outcome.semanticState.name.lowercase())
+            // 失败原因必须出去：只给一个 failed，排查时等于什么都没说
+            outcome.semanticDetail?.let { put("semantic_detail", it) }
             put("has_more", outcome.hasMore)
             put("offset", offset)
             put(

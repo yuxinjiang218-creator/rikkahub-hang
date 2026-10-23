@@ -35,11 +35,17 @@ enum class SemanticState {
     SKIPPED_EXACT
 }
 
-/** 一次历史搜索的结果与召回状态 */
+/**
+ * 一次历史搜索的结果与召回状态。
+ *
+ * [semanticDetail] 是给调用方（尤其是模型）看的具体原因：光一个 failed 没法判断
+ * 是没配模型、超时、接口报错还是索引没建好。界面上不展示，工具会把它带出去。
+ */
 data class HistorySearchOutcome(
     val results: List<MessageSearchResult>,
     val semanticState: SemanticState,
-    val hasMore: Boolean = false
+    val hasMore: Boolean = false,
+    val semanticDetail: String? = null
 )
 
 /**
