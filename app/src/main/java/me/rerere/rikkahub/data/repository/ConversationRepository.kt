@@ -40,6 +40,7 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.index.EmbeddingClient
 import me.rerere.rikkahub.data.index.EmbeddingTarget
 import me.rerere.rikkahub.data.index.IndexTaskScheduler
+import me.rerere.rikkahub.data.index.HistorySearchOutcome
 import me.rerere.rikkahub.data.index.IndexableText
 import me.rerere.rikkahub.data.index.RankedFusion
 import me.rerere.rikkahub.data.index.RecallSource

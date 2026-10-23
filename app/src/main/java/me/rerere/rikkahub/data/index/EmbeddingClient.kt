@@ -34,7 +34,7 @@ class EmbeddingClient(
                         model = target.model,
                         input = input,
                         customHeaders = target.model.customHeaders,
-                        customBody = target.model.customBody,
+                        customBodies = target.model.customBodies,
                     )
                 )
                 require(result.embeddings.size == input.size) {
