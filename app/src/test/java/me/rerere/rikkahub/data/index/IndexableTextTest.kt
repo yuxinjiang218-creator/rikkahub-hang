@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.index
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.ServerToolStatus
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import org.junit.Assert.assertEquals
