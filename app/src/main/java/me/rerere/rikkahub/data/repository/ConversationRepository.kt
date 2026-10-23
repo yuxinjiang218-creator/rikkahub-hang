@@ -667,8 +667,9 @@ class ConversationRepository(
     ): Pair<List<MessageSearchResult>, SemanticState> {
         val instruction = settingsStore.awaitLoaded().embeddingIndex.instruction
         val queryText = if (instruction.isBlank()) keyword else "$instruction\n$keyword"
-        // 缓存 key 必须带上模型和指令：只按文本做 key，切模型后会拿旧模型的向量去搜新库
-        val cacheKey = "${target.model.id}|${instruction.hashCode()}|$queryText"
+        // 缓存 key 必须带上端点指纹（端点 + 自定义 headers/body）而不只是模型 id：
+        // 同一模型配不同参数就是不同空间，维度碰巧一样时不会报错，只会静默给出错结果
+        val cacheKey = "${target.fingerprint}|${instruction.hashCode()}|$queryText"
         val cached = queryEmbeddingCache[cacheKey]
         val embedding = cached ?: try {
             withTimeoutOrNull(QUERY_EMBEDDING_TIMEOUT_MS) {

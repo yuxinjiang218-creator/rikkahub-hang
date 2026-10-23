@@ -28,8 +28,13 @@ class ConversationIndexer(
     private val embeddingClient: EmbeddingClient,
     private val vectorIndexProvider: VectorIndexProvider,
 ) {
-    /** 每个模型一进程只探一次维度：省一次请求，也避免 profile id 来回抖 */
-    private val dimensionCache = ConcurrentHashMap<Uuid, Int>()
+    /**
+     * 每个“端点+模型配置”一进程只探一次维度。
+     *
+     * 不能只按模型 id 缓存：同一个模型 id 配上不同的 `dimensions` 参数就能改变维度，
+     * 沿用旧维度会让新向量反复写失败。指纹里带了 headers/body，正好能区分。
+     */
+    private val dimensionCache = ConcurrentHashMap<String, Int>()
 
     /** FTS 提取规则升级后需要重建，由 worker 在索引前顺手做掉 */
     suspend fun ensureFtsReady() = withContext(Dispatchers.IO) {
@@ -37,19 +42,22 @@ class ConversationIndexer(
     }
 
     /**
-     * 处理一批任务；返回是否还有“现在就能干”的工作。
+     * 处理一批任务。
      *
-     * 失败的会话会在本轮被跳过（不是死等），剩下的任务照常做完；
-     * 只有当队列里只剩失败项时返回 false，交给下一次调度重试，
-     * 免得一个探测失败的会话把整条队列饿死。
+     * 失败的会话会在本轮被跳过（不是死等），剩下的任务照常做完，
+     * 所以一个探测失败的会话不会把整条队列饿死。
+     *
+     * [ProcessResult.hasMore] 只表示“还有现在就能干的活”，批次上限截断时仍为 true，
+     * 调用方可以接着下一批；[ProcessResult.deferred] 表示本轮有会话失败，
+     * 需要退避后重试。
      */
-    suspend fun processPending(maxConversations: Int = DEFAULT_MAX_CONVERSATIONS): Boolean =
+    suspend fun processPending(maxConversations: Int = DEFAULT_MAX_CONVERSATIONS): ProcessResult =
         withContext(Dispatchers.IO) {
             val settings = settingsStore.awaitLoaded()
             val target = settings.resolveEmbeddingTarget()
             if (target == null) {
                 Log.i(TAG, "embedding 未配置，跳过索引")
-                return@withContext false
+                return@withContext ProcessResult(hasMore = false, deferred = false)
             }
             val store = vectorIndexProvider.get()
             var processed = 0
@@ -70,12 +78,17 @@ class ConversationIndexer(
                 }
                 processed++
             }
-            if (deferred.isNotEmpty()) {
-                Log.i(TAG, "本轮跳过 ${deferred.size} 个会话，等下次重试")
-                false
-            } else {
+            // 只要队列里还有“不是本轮失败项”的任务，就说明这轮是被批次上限截断的，
+            // 应该接着干；只有剩下的全是失败项时才收工
+            val remaining = if (deferred.isEmpty()) {
                 conversationIndexTaskDao.count() > 0
+            } else {
+                conversationIndexTaskDao.pendingConversationIds().any { it !in deferred }
             }
+            if (deferred.isNotEmpty()) {
+                Log.i(TAG, "本轮跳过 ${deferred.size} 个会话，等待退避重试")
+            }
+            ProcessResult(hasMore = remaining, deferred = deferred.isNotEmpty())
         }
 
     /** 会话被删：删掉向量再销任务 */
@@ -251,10 +264,10 @@ class ConversationIndexer(
 
     /** 维度从第一次返回里读，之后进程内缓存；探一次只为确定 profile */
     private suspend fun ensureDimension(settings: Settings, target: EmbeddingTarget): Int? {
-        dimensionCache[target.model.id]?.let { return it }
+        dimensionCache[target.fingerprint]?.let { return it }
         return try {
             val probe = embeddingClient.embed(target, listOf(DIMENSION_PROBE_TEXT))
-            probe.firstOrNull()?.size?.takeIf { it > 0 }?.also { dimensionCache[target.model.id] = it }
+            probe.firstOrNull()?.size?.takeIf { it > 0 }?.also { dimensionCache[target.fingerprint] = it }
         } catch (error: Throwable) {
             Log.w(TAG, "探测 embedding 维度失败: ${error.message}")
             null
@@ -300,6 +313,12 @@ class ConversationIndexer(
     )
 
     private fun chunkKey(messageId: String, chunkIndex: Int) = "$messageId#$chunkIndex"
+
+    /**
+     * @param hasMore 还有现在就能处理的工作
+     * @param deferred 本轮有会话失败，需要退避后重试
+     */
+    data class ProcessResult(val hasMore: Boolean, val deferred: Boolean)
 
     companion object {
         private const val TAG = "ConversationIndexer"

@@ -22,13 +22,24 @@ class ConversationIndexWorker(
     override suspend fun doWork(): Result {
         return try {
             indexer.ensureFtsReady()
-            var round = 0
-            while (!isStopped && round < MAX_ROUNDS) {
-                val more = indexer.processPending()
-                round++
-                if (!more) break
+            // 不看轮数看时间：轮数封顶会让大批历史“假装做完”，然后半天没人管
+            val deadline = System.currentTimeMillis() + WORK_BUDGET_MS
+            var deferred = false
+            while (!isStopped) {
+                val result = indexer.processPending()
+                deferred = deferred || result.deferred
+                if (!result.hasMore) break
+                if (System.currentTimeMillis() >= deadline) {
+                    Log.i(TAG, "本轮时间用完，剩余任务交给下一次调度")
+                    return Result.retry()
+                }
             }
-            Result.success()
+            if (deferred) {
+                // 有会话没做成（网络或接口问题），交给退避重试，别等用户再点“立即重试”
+                Result.retry()
+            } else {
+                Result.success()
+            }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Throwable) {
@@ -39,6 +50,8 @@ class ConversationIndexWorker(
 
     companion object {
         private const val TAG = "ConversationIndexWorker"
-        private const val MAX_ROUNDS = 20
+
+        /** 一次 worker 最多干这么久，剩下的靠 retry 续上，而不是直接宣布完成 */
+        private const val WORK_BUDGET_MS = 8 * 60 * 1000L
     }
 }
