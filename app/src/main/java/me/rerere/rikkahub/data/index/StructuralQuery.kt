@@ -19,7 +19,8 @@ object StructuralQuery {
         Regex("""\b(ERR|HTTP|SQLITE|E|W)[-_ ]?\d{2,5}\b""", RegexOption.IGNORE_CASE),
         // errno 与 SQLite 常量名
         Regex(
-            """\b(SQLITE_[A-Z_]+|EAI_[A-Z_]+|ENOENT|EACCES|EPERM|ENOMEM|EINVAL|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)\b"""
+            """\b(SQLITE_[A-Z_]+|EAI_[A-Z_]+|ENOENT|EACCES|EPERM|ENOMEM)""" +
+                """|EINVAL|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)\b"""
         ),
         // 长十六进制（哈希、提交号）
         Regex("""\b[0-9a-f]{16,}\b""", RegexOption.IGNORE_CASE),

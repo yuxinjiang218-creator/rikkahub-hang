@@ -102,10 +102,11 @@ class RankedFusionTest {
 
     @Test
     fun `ties are deterministic`() {
-        val first = RankedFusion.fuse(listOf(list("b", "a"), list("a", "b")))
+        val input = listOf(list("b", "a"), list("a", "b"))
+        val first = RankedFusion.fuse(input)
         val second = RankedFusion.fuse(listOf(list("a", "b"), list("b", "a")))
         assertEquals(first.map { it.messageKey }.toSet(), second.map { it.messageKey }.toSet())
-        // 同分时按最佳名次再按 key 兜底，两次调用结果一致
-        assertEquals(first.map { it.messageKey }, RankedFusion.fuse(listOf(list("b", "a"), list("a", "b"))).map { it.messageKey })
+        // 同分时按最佳名次再按 key 兜底，同样输入多次调用结果一致
+        assertEquals(first.map { it.messageKey }, RankedFusion.fuse(input).map { it.messageKey })
     }
 }

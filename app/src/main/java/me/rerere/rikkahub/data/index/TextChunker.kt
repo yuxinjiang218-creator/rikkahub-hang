@@ -64,9 +64,9 @@ object TextChunker {
             }
             val nextCursor = if (last == cursor) cursor + 1 else last
             val isLastSpan = nextCursor >= spans.size
-            val tooShort = span.end - span.start < MIN_CHARS
+            val tooShort = span.length < MIN_CHARS
             if (tooShort && chunks.isNotEmpty() && !isLastSpan) {
-                // 太短：把它并进上一块（不重叠，直接延长上一块）
+                // 太短：并进上一块（不重叠，直接延长上一块）
                 val previous = chunks.removeAt(chunks.lastIndex)
                 val merged = trimRange(text, previous.start, span.end) ?: span
                 chunks += TextChunk(
@@ -104,9 +104,14 @@ object TextChunker {
 
     private const val HEX = "0123456789abcdef"
 
+    /** 首尾相接的原文区间，[end] 不含 */
+    private data class Span(val start: Int, val end: Int) {
+        val length: Int get() = end - start
+    }
+
     /** 按句子边界把文本切成首尾相接、覆盖全文的区间；超长句子在目标长度处硬切 */
-    private fun splitSpans(text: String): List<IntRange> {
-        val spans = ArrayList<IntRange>()
+    private fun splitSpans(text: String): List<Span> {
+        val spans = ArrayList<Span>()
         var start = 0
         var i = 0
         while (i < text.length) {
@@ -114,19 +119,19 @@ object TextChunker {
                 // 句末标点归入当前句子，连续标点算一个边界
                 var end = i + 1
                 while (end < text.length && isSentenceEnd(text, end)) end++
-                spans += start until end
+                spans += Span(start, end)
                 start = end
                 i = end
                 continue
             }
             // 硬切不包含当前位置的字符，切点落在字符之前
             if (i - start >= TARGET_CHARS && isSafeCut(text, i)) {
-                spans += start until i
+                spans += Span(start, i)
                 start = i
             }
             i++
         }
-        if (start < text.length) spans += start until text.length
+        if (start < text.length) spans += Span(start, text.length)
         return spans
     }
 
@@ -147,11 +152,11 @@ object TextChunker {
         return !(text[index - 1].isHighSurrogate() && text[index].isLowSurrogate())
     }
 
-    private fun trimRange(text: String, start: Int, end: Int): IntRange? {
+    private fun trimRange(text: String, start: Int, end: Int): Span? {
         var left = start
         var right = end
         while (left < right && text[left].isWhitespace()) left++
         while (right > left && text[right - 1].isWhitespace()) right--
-        return if (left >= right) null else left until right
+        return if (left >= right) null else Span(left, right)
     }
 }
