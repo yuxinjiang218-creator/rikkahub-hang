@@ -482,6 +482,77 @@ class ConversationRepository(
         )
     }
 
+    /**
+     * 搜索页用的跨会话混合检索。
+     *
+     * 和工具那条路的区别：不限助手、不排除当前会话、不分页，
+     * 按时间排序时直接返回纯词法结果——把向量揉进「按时间」的列表里只会把顺序搞乱。
+     */
+    suspend fun searchMessagesHybrid(
+        keyword: String,
+        sort: MessageSearchSort,
+        assistantId: Uuid?,
+    ): HistorySearchOutcome {
+        if (keyword.isBlank()) return HistorySearchOutcome(emptyList(), SemanticState.DISABLED)
+        val lexical = searchMessages(keyword, sort, assistantId)
+        val settings = settingsStore.awaitLoaded()
+        val target = settings.resolveEmbeddingTarget()
+        if (target == null) {
+            return HistorySearchOutcome(
+                results = lexical,
+                semanticState = if (settings.embeddingIndex.enabled) {
+                    SemanticState.NOT_CONFIGURED
+                } else {
+                    SemanticState.DISABLED
+                },
+            )
+        }
+        val pending = runCatching { conversationIndexTaskDao.pendingConversationIds().toSet() }
+            .getOrDefault(emptySet())
+        val (vectorResults, state) = recallByEmbedding(
+            keyword = keyword,
+            target = target,
+            assistantId = assistantId,
+            currentConversationId = null,
+            focusConversationId = null,
+            role = null,
+            fetchLimit = historyFetchLimit(lexical.size.coerceAtLeast(DEFAULT_HISTORY_SEARCH_LIMIT)),
+            excludeConversationIds = pending,
+        )
+        if (state != SemanticState.OK && state != SemanticState.INDEXING) {
+            return HistorySearchOutcome(lexical, state)
+        }
+        if (vectorResults.isEmpty()) return HistorySearchOutcome(lexical, state)
+
+        // 按时间排序时，向量只负责“把漏掉的找出来”，最终顺序仍然严格按时间，
+        // 否则用户选了「最新优先」却看到旧记录插在中间
+        if (sort != MessageSearchSort.RELEVANCE) {
+            val merged = (lexical + vectorResults)
+                .distinctBy { historySearchResultRef(it) }
+                .sortedWith(
+                    if (sort == MessageSearchSort.NEWEST_FIRST) {
+                        compareByDescending<MessageSearchResult> { it.updateAt }
+                    } else {
+                        compareBy<MessageSearchResult> { it.updateAt }
+                    }
+                )
+            return HistorySearchOutcome(merged, state)
+        }
+
+        // 搜索页是平铺列表，不做每会话限制，否则用户会以为记录丢了
+        val fused = fuseHistoryResults(
+            lexicalRoutes = if (lexical.isEmpty()) {
+                emptyList()
+            } else {
+                listOf(RecallSource.RAW to lexical)
+            },
+            vectorResults = vectorResults,
+            requestedLimit = lexical.size + vectorResults.size,
+            perConversationLimit = Int.MAX_VALUE,
+        )
+        return fused.copy(semanticState = state)
+    }
+
     suspend fun searchAssistantHistory(
         assistantId: Uuid,
         keyword: String,
@@ -658,8 +729,8 @@ class ConversationRepository(
     private suspend fun recallByEmbedding(
         keyword: String,
         target: EmbeddingTarget,
-        assistantId: Uuid,
-        currentConversationId: Uuid,
+        assistantId: Uuid?,
+        currentConversationId: Uuid?,
         focusConversationId: Uuid?,
         role: MessageRole?,
         fetchLimit: Int,
@@ -705,9 +776,9 @@ class ConversationRepository(
                 limit = fetchLimit,
                 filter = VectorFilter(
                     conversationId = focusConversationId?.toString(),
-                    excludeConversationId = currentConversationId.toString(),
+                    excludeConversationId = currentConversationId?.toString(),
                     excludeConversationIds = excludeConversationIds,
-                    assistantIds = setOf(assistantId.toString()),
+                    assistantIds = assistantId?.let { setOf(it.toString()) },
                     role = role?.name?.lowercase(),
                 )
             )

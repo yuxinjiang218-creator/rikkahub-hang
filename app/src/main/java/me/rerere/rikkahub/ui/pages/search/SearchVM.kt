@@ -1,9 +1,9 @@
 package me.rerere.rikkahub.ui.pages.search
 
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.channels.Channel
@@ -145,7 +145,13 @@ class SearchVM(
         isLoading = true
         try {
             if (request.debounce) delay(300L)
-            results = conversationRepo.searchMessages(request.query, request.sort, request.assistantId)
+            // 走混合检索：词法命中的照旧排前面，向量只补「意思相近但没命中关键词」的；
+            // 界面上不做任何额外提示，用户看到的只是搜得更全
+            results = conversationRepo.searchMessagesHybrid(
+                keyword = request.query,
+                sort = request.sort,
+                assistantId = request.assistantId,
+            ).results
         } finally {
             isLoading = false
         }
