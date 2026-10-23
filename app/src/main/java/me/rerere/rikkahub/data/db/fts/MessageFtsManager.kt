@@ -7,6 +7,8 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.data.index.IndexableText
+import me.rerere.rikkahub.data.index.RecallSource
 import me.rerere.rikkahub.data.model.Conversation
 import java.time.Instant
 
@@ -20,6 +22,8 @@ data class MessageSearchResult(
     val role: MessageRole = MessageRole.ASSISTANT,
     val createdAt: Instant = Instant.EPOCH,
     val isSelected: Boolean = true,
+    // 这条结果是被哪几路召回的：词法 raw/segment/token、向量 vector
+    val matchedBy: Set<RecallSource> = emptySet(),
 )
 
 enum class MessageSearchSort(val orderBy: String) {
@@ -29,6 +33,7 @@ enum class MessageSearchSort(val orderBy: String) {
 }
 
 private const val TAG = "MessageFtsManager"
+private const val META_EXTRACT_VERSION = "fts_extract_version"
 
 class MessageFtsManager(private val database: AppDatabase) {
 
@@ -40,7 +45,7 @@ class MessageFtsManager(private val database: AppDatabase) {
         conversation.messageNodes.forEach { node ->
             node.messages.forEach { message ->
                 val text = message.extractFtsText()
-                if (text.isNotBlank()) {
+                if (text != null) {
                     db.execSQL(
                         "INSERT INTO message_fts(text, node_id, message_id, conversation_id, title, update_at) VALUES (?, ?, ?, ?, ?, ?)",
                         arrayOf(
@@ -67,6 +72,22 @@ class MessageFtsManager(private val database: AppDatabase) {
 
     suspend fun deleteAll() = withContext(Dispatchers.IO) {
         db.execSQL("DELETE FROM message_fts")
+    }
+
+    /** 已建索引时使用的文本提取版本；null 表示还没记录过（需要重建） */
+    suspend fun storedExtractVersion() = withContext(Dispatchers.IO) {
+        runCatching {
+            db.query("SELECT value FROM fts_meta WHERE key = ?", arrayOf(META_EXTRACT_VERSION)).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0)?.toIntOrNull() else null
+            }
+        }.getOrNull()
+    }
+
+    suspend fun setExtractVersion(version: Int) = withContext(Dispatchers.IO) {
+        db.execSQL(
+            "INSERT OR REPLACE INTO fts_meta(key, value) VALUES(?, ?)",
+            arrayOf(META_EXTRACT_VERSION, version.toString())
+        )
     }
 
     suspend fun search(
@@ -148,7 +169,12 @@ class MessageFtsManager(private val database: AppDatabase) {
     }
 }
 
-private fun UIMessage.extractFtsText(): String =
-    parts.filterIsInstance<UIMessagePart.Text>()
-        .joinToString("\n") { it.text }
-        .take(10_000)
+/**
+ * 词法索引与向量索引共用同一套提取规则：只取用户/助手消息的顶层纯文本。
+ *
+ * 工具输入输出、思考、附件、压缩检查点在 [IndexableText] 里已经排除。
+ */
+private fun UIMessage.extractFtsText(): String? =
+    IndexableText.extract(this)?.take(MAX_FTS_TEXT_LENGTH)
+
+private const val MAX_FTS_TEXT_LENGTH = 10_000

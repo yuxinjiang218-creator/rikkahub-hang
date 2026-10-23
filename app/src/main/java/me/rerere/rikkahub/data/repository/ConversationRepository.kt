@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.repository
 
 import android.database.sqlite.SQLiteBlobTooBigException
+import android.util.Log
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -8,14 +9,21 @@ import androidx.paging.PagingSource
 import androidx.paging.map
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.ConversationSortOrder
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.ConversationIndexTaskDAO
@@ -29,7 +37,20 @@ import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.index.EmbeddingClient
+import me.rerere.rikkahub.data.index.EmbeddingTarget
 import me.rerere.rikkahub.data.index.IndexTaskScheduler
+import me.rerere.rikkahub.data.index.IndexableText
+import me.rerere.rikkahub.data.index.RankedFusion
+import me.rerere.rikkahub.data.index.RecallSource
+import me.rerere.rikkahub.data.index.SemanticState
+import me.rerere.rikkahub.data.index.StructuralQuery
+import me.rerere.rikkahub.data.index.TextChunker
+import me.rerere.rikkahub.data.index.VectorFilter
+import me.rerere.rikkahub.data.index.VectorIndexProvider
+import me.rerere.rikkahub.data.index.fuseHistoryResults
+import me.rerere.rikkahub.data.index.resolveEmbeddingTarget
+import me.rerere.rikkahub.data.index.selectedMessageOrNull
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
@@ -46,11 +67,20 @@ class ConversationRepository(
     private val messageFtsManager: MessageFtsManager,
     private val conversationIndexTaskDao: ConversationIndexTaskDAO,
     private val indexTaskScheduler: IndexTaskScheduler,
+    private val settingsStore: SettingsStore,
+    private val vectorIndexProvider: VectorIndexProvider,
+    private val embeddingClient: EmbeddingClient,
 ) {
     companion object {
+        private const val TAG = "ConversationRepository"
+        private const val QUERY_EMBEDDING_TIMEOUT_MS = 800L
+        private const val QUERY_EMBEDDING_CACHE_SIZE = 32
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
     }
+
+    /** 查询向量缓存，避免重复点搜索时反复打接口 */
+    private val queryEmbeddingCache = java.util.concurrent.ConcurrentHashMap<String, FloatArray>()
 
     suspend fun hasFileReference(fileUrl: String): Boolean =
         messageNodeDAO.hasFileReference(JsonInstant.encodeToString(fileUrl))
@@ -377,19 +407,16 @@ class ConversationRepository(
     suspend fun searchMessagesOfAssistants(keyword: String, assistantIds: Set<Uuid>) =
         messageFtsManager.search(keyword, MessageSearchSort.RELEVANCE, assistantIds.map { it.toString() })
 
-    suspend fun searchAssistantHistory(
+    /** 词法三路召回的原始候选（每路内部已排序去重），供纯词法与混合检索共用 */
+    private suspend fun collectHistoryRouteCandidates(
         assistantId: Uuid,
         keyword: String,
         currentConversationId: Uuid,
-        focusConversationId: Uuid? = null,
-        role: MessageRole? = null,
-        limit: Int = DEFAULT_HISTORY_SEARCH_LIMIT,
-        excludeSnippetKeys: Set<String> = emptySet(),
-    ): List<MessageSearchResult> {
-        if (keyword.isBlank()) return emptyList()
-        val normalizedLimit = normalizeHistorySearchLimit(limit)
+        focusConversationId: Uuid?,
+        role: MessageRole?,
+        fetchLimit: Int,
+    ): List<Pair<HistorySearchRoute, List<HistoryRouteCandidate>>> {
         val plan = buildHistoryQueryPlan(keyword)
-        val fetchLimit = (normalizedLimit * 4).coerceAtLeast(24).coerceAtMost(MAX_HISTORY_SEARCH_FETCH_LIMIT)
         val conversations = mutableMapOf<Uuid, Conversation?>()
 
         suspend fun searchRoute(query: String): List<MessageSearchResult> {
@@ -441,13 +468,252 @@ class ConversationRepository(
             tokenResults,
             totalTokenCount = plan.tokenQueries.size,
         )
-        val merged = mergeHistoryRouteCandidates(rawCandidates, segmentCandidates, tokenCandidates)
+        return listOf(
+            HistorySearchRoute.RAW to rawCandidates,
+            HistorySearchRoute.SEGMENT to segmentCandidates,
+            HistorySearchRoute.TOKEN to tokenCandidates,
+        )
+    }
+
+    suspend fun searchAssistantHistory(
+        assistantId: Uuid,
+        keyword: String,
+        currentConversationId: Uuid,
+        focusConversationId: Uuid? = null,
+        role: MessageRole? = null,
+        limit: Int = DEFAULT_HISTORY_SEARCH_LIMIT,
+        excludeSnippetKeys: Set<String> = emptySet(),
+    ): List<MessageSearchResult> {
+        if (keyword.isBlank()) return emptyList()
+        val normalizedLimit = normalizeHistorySearchLimit(limit)
+        val routes = collectHistoryRouteCandidates(
+            assistantId = assistantId,
+            keyword = keyword,
+            currentConversationId = currentConversationId,
+            focusConversationId = focusConversationId,
+            role = role,
+            fetchLimit = historyFetchLimit(normalizedLimit),
+        )
+        val candidates = routes.associate { (route, list) -> route to list }
+        val merged = mergeHistoryRouteCandidates(
+            rawCandidates = candidates[HistorySearchRoute.RAW].orEmpty(),
+            segmentCandidates = candidates[HistorySearchRoute.SEGMENT].orEmpty(),
+            tokenCandidates = candidates[HistorySearchRoute.TOKEN].orEmpty(),
+        )
         val fresh = filterNewHistorySearchResults(merged, excludeSnippetKeys)
         return selectHistorySearchCandidates(
             fresh,
             requestedLimit = normalizedLimit,
             perConversationLimit = if (focusConversationId == null) HISTORY_SEARCH_PER_CONVERSATION_LIMIT else normalizedLimit,
         )
+    }
+
+    /**
+     * 混合检索：词法三路 + 向量一路做 RRF 融合。
+     *
+     * 语义召回不可用时自动退回纯词法，并把原因放进 [HistorySearchOutcome.semanticState]。
+     * 所有硬约束（助手、排除当前会话、指定会话、角色、选中分支、待处理索引任务）都在候选截断前生效。
+     */
+    suspend fun searchAssistantHistoryHybrid(
+        assistantId: Uuid,
+        keyword: String,
+        currentConversationId: Uuid,
+        focusConversationId: Uuid? = null,
+        role: MessageRole? = null,
+        limit: Int = DEFAULT_HISTORY_SEARCH_LIMIT,
+        offset: Int = 0,
+        excludeSnippetKeys: Set<String> = emptySet(),
+    ): HistorySearchOutcome {
+        if (keyword.isBlank()) return HistorySearchOutcome(emptyList(), SemanticState.DISABLED)
+        val normalizedLimit = normalizeHistorySearchLimit(limit)
+        val normalizedOffset = offset.coerceAtLeast(0)
+        val fetchLimit = historyFetchLimit(normalizedLimit)
+        val routes = collectHistoryRouteCandidates(
+            assistantId = assistantId,
+            keyword = keyword,
+            currentConversationId = currentConversationId,
+            focusConversationId = focusConversationId,
+            role = role,
+            fetchLimit = fetchLimit,
+        )
+        val lexicalRoutes = routes.map { (route, candidates) ->
+            route.toRecallSource() to candidates.map { candidate -> candidate.result }
+        }
+        val lexicalMerged = mergeHistoryRouteCandidates(
+            rawCandidates = routes.first { it.first == HistorySearchRoute.RAW }.second,
+            segmentCandidates = routes.first { it.first == HistorySearchRoute.SEGMENT }.second,
+            tokenCandidates = routes.first { it.first == HistorySearchRoute.TOKEN }.second,
+        )
+        val filtered = filterNewHistorySearchResults(lexicalMerged, excludeSnippetKeys)
+
+        val settings = settingsStore.awaitLoaded()
+        val target = settings.resolveEmbeddingTarget()
+        if (target == null) {
+            return fallbackOutcome(
+                filtered, normalizedLimit, focusConversationId, normalizedOffset,
+                if (settings.embeddingIndex.enabled) SemanticState.NOT_CONFIGURED else SemanticState.DISABLED
+            )
+        }
+        // 路径、错误码这类精确查询已经被词法高置信命中，不用再花一次 embedding
+        if (StructuralQuery.isStructural(keyword) && filtered.isNotEmpty()) {
+            return fallbackOutcome(
+                filtered, normalizedLimit, focusConversationId, normalizedOffset, SemanticState.SKIPPED_EXACT
+            )
+        }
+
+        val pending = runCatching { conversationIndexTaskDao.pendingConversationIds().toSet() }
+            .getOrDefault(emptySet())
+        val vectorOutcome = recallByEmbedding(
+            keyword = keyword,
+            target = target,
+            assistantId = assistantId,
+            currentConversationId = currentConversationId,
+            focusConversationId = focusConversationId,
+            role = role,
+            fetchLimit = fetchLimit,
+            excludeConversationIds = pending,
+        )
+        if (vectorOutcome.second != SemanticState.OK && vectorOutcome.second != SemanticState.INDEXING) {
+            return fallbackOutcome(
+                filtered, normalizedLimit, focusConversationId, normalizedOffset, vectorOutcome.second
+            )
+        }
+        val vectorResults = vectorOutcome.first
+        if (vectorResults.isEmpty() && filtered.isEmpty()) {
+            return HistorySearchOutcome(emptyList(), vectorOutcome.second)
+        }
+        val fused = fuseHistoryResults(
+            lexicalRoutes = lexicalRoutes,
+            vectorResults = vectorResults,
+            requestedLimit = normalizedLimit,
+            perConversationLimit = if (focusConversationId == null) {
+                RankedFusion.perConversationCap(normalizedLimit)
+            } else {
+                normalizedLimit
+            },
+            offset = normalizedOffset,
+        )
+        return fused.copy(semanticState = vectorOutcome.second)
+    }
+
+    private fun fallbackOutcome(
+        lexical: List<MessageSearchResult>,
+        limit: Int,
+        focusConversationId: Uuid?,
+        offset: Int,
+        state: SemanticState,
+    ): HistorySearchOutcome {
+        val selected = selectHistorySearchCandidates(
+            lexical,
+            requestedLimit = limit + offset,
+            perConversationLimit = if (focusConversationId == null) {
+                RankedFusion.perConversationCap(limit + offset)
+            } else {
+                limit + offset
+            },
+        )
+        return HistorySearchOutcome(
+            results = selected.drop(offset),
+            semanticState = state,
+            hasMore = lexical.size > offset + selected.size,
+        )
+    }
+
+    /** 查询向量 + 向量召回 + 回主库核对 */
+    private suspend fun recallByEmbedding(
+        keyword: String,
+        target: EmbeddingTarget,
+        assistantId: Uuid,
+        currentConversationId: Uuid,
+        focusConversationId: Uuid?,
+        role: MessageRole?,
+        fetchLimit: Int,
+        excludeConversationIds: Set<String>,
+    ): Pair<List<MessageSearchResult>, SemanticState> {
+        val instruction = settingsStore.awaitLoaded().embeddingIndex.instruction
+        val queryText = if (instruction.isBlank()) keyword else "$instruction\n$keyword"
+        val cached = queryEmbeddingCache[queryText]
+        val embedding = cached ?: try {
+            withTimeoutOrNull(QUERY_EMBEDDING_TIMEOUT_MS) {
+                embeddingClient.embed(target, listOf(queryText)).firstOrNull()
+            } ?: return emptyList<MessageSearchResult>() to SemanticState.TIMEOUT
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            return emptyList<MessageSearchResult>() to SemanticState.FAILED
+        }
+        if (cached == null && embedding.isNotEmpty()) {
+            if (queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_SIZE) queryEmbeddingCache.clear()
+            queryEmbeddingCache[queryText] = embedding
+        }
+        if (embedding.isEmpty()) return emptyList<MessageSearchResult>() to SemanticState.FAILED
+
+        val store = runCatching { vectorIndexProvider.get() }.getOrNull()
+            ?: return emptyList<MessageSearchResult>() to SemanticState.NOT_CONFIGURED
+        val hits = runCatching {
+            store.search(
+                embedding = embedding,
+                limit = fetchLimit,
+                filter = VectorFilter(
+                    conversationId = focusConversationId?.toString(),
+                    excludeConversationId = currentConversationId.toString(),
+                    excludeConversationIds = excludeConversationIds,
+                    assistantIds = setOf(assistantId.toString()),
+                    role = role?.name?.lowercase(),
+                )
+            )
+        }.getOrElse {
+            Log.w(TAG, "向量召回失败: ${it.message}")
+            return emptyList<MessageSearchResult>() to SemanticState.FAILED
+        }
+        val conversations = mutableMapOf<Uuid, Conversation?>()
+        val matched = ArrayList<MessageSearchResult>(hits.size)
+        for (hit in hits) {
+            val conversationId = runCatching { Uuid.parse(hit.conversationId) }.getOrNull() ?: continue
+            val conversation = if (conversations.containsKey(conversationId)) {
+                conversations[conversationId]
+            } else {
+                getConversationById(conversationId).also { conversations[conversationId] = it }
+            } ?: continue
+            val node = conversation.messageNodes.firstOrNull { it.id.toString() == hit.nodeId } ?: continue
+            val message = node.selectedMessageOrNull() ?: continue
+            // 回主库核对：消息还在、角色对得上、确实是选中的分支、内容哈希没变
+            if (message.id.toString() != hit.messageId) continue
+            if (role != null && message.role != role) continue
+            val text = IndexableText.extract(message) ?: continue
+            if (hit.endOffset > text.length || hit.startOffset >= hit.endOffset) continue
+            if (TextChunker.hashOf(text, hit.startOffset, hit.endOffset) != hit.contentHash) continue
+            matched += MessageSearchResult(
+                nodeId = hit.nodeId,
+                messageId = hit.messageId,
+                conversationId = hit.conversationId,
+                title = conversation.title,
+                updateAt = conversation.updateAt,
+                snippet = buildVectorSnippet(text, hit.startOffset, hit.endOffset),
+                role = message.role,
+                createdAt = message.createdAt.toInstant(TimeZone.currentSystemDefault()).toJavaInstant(),
+                isSelected = true,
+                matchedBy = setOf(RecallSource.VECTOR),
+            )
+        }
+        return matched to SemanticState.OK
+    }
+
+    private fun buildVectorSnippet(text: String, start: Int, end: Int): String {
+        val from = (start - 40).coerceAtLeast(0)
+        val to = (end + 40).coerceAtMost(text.length)
+        val prefix = if (from > 0) "..." else ""
+        val suffix = if (to < text.length) "..." else ""
+        return prefix + text.substring(from, to).replace(Regex("\\s+"), " ").trim() + suffix
+    }
+
+    private fun historyFetchLimit(limit: Int): Int =
+        (limit * 8).coerceAtLeast(80).coerceAtMost(MAX_HISTORY_SEARCH_FETCH_LIMIT * 4)
+
+    private fun HistorySearchRoute.toRecallSource(): RecallSource = when (this) {
+        HistorySearchRoute.RAW -> RecallSource.RAW
+        HistorySearchRoute.SEGMENT -> RecallSource.SEGMENT
+        HistorySearchRoute.TOKEN -> RecallSource.TOKEN
     }
 
     suspend fun readAssistantHistory(
@@ -509,6 +775,35 @@ class ConversationRepository(
 
     /** 后台重建向量索引时枚举全部会话 id */
     suspend fun getAllConversationIds(): List<String> = conversationDAO.getAllIds()
+
+    /** 索引重建进度，界面和工具结果据此报告"仍在建" */
+    data class IndexBuildState(
+        val running: Boolean = false,
+        val current: Int = 0,
+        val total: Int = 0,
+    )
+
+    private val _ftsRebuildState = MutableStateFlow(IndexBuildState())
+    val ftsRebuildState: StateFlow<IndexBuildState> = _ftsRebuildState.asStateFlow()
+
+    /**
+     * 文本提取规则升级后，旧 FTS 里可能还留着工具输出。
+     *
+     * 版本不一致就清空并后台重建；重建期间搜索仍能返回已完成的部分，并通过 [ftsRebuildState] 报状态。
+     */
+    suspend fun ensureFtsIndexUpToDate() = withContext(Dispatchers.IO) {
+        val stored = messageFtsManager.storedExtractVersion()
+        if (stored == IndexableText.EXTRACT_VERSION) return@withContext
+        _ftsRebuildState.value = IndexBuildState(running = true)
+        try {
+            rebuildAllIndexes { current, total ->
+                _ftsRebuildState.value = IndexBuildState(running = true, current = current, total = total)
+            }
+            messageFtsManager.setExtractVersion(IndexableText.EXTRACT_VERSION)
+        } finally {
+            _ftsRebuildState.value = IndexBuildState()
+        }
+    }
 
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()

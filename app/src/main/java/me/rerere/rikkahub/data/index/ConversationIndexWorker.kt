@@ -21,6 +21,7 @@ class ConversationIndexWorker(
 
     override suspend fun doWork(): Result {
         return try {
+            indexer.ensureFtsReady()
             var round = 0
             while (!isStopped && round < MAX_ROUNDS) {
                 val more = indexer.processPending()

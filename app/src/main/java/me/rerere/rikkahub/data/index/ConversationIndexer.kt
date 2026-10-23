@@ -31,6 +31,11 @@ class ConversationIndexer(
     /** 每个模型一进程只探一次维度：省一次请求，也避免 profile id 来回抖 */
     private val dimensionCache = ConcurrentHashMap<Uuid, Int>()
 
+    /** FTS 提取规则升级后需要重建，由 worker 在索引前顺手做掉 */
+    suspend fun ensureFtsReady() = withContext(Dispatchers.IO) {
+        conversationRepository.ensureFtsIndexUpToDate()
+    }
+
     /** 处理一批任务；返回是否还有剩余工作 */
     suspend fun processPending(maxConversations: Int = DEFAULT_MAX_CONVERSATIONS): Boolean =
         withContext(Dispatchers.IO) {
@@ -113,7 +118,7 @@ class ConversationIndexer(
         val pending = ArrayList<PendingChunk>()
 
         for (node in conversation.messageNodes) {
-            val message = node.currentMessageOrNull() ?: continue
+            val message = node.selectedMessageOrNull() ?: continue
             val text = IndexableText.extract(message) ?: continue
             val chunks = TextChunker.chunk(text)
             if (chunks.isEmpty()) continue
@@ -256,10 +261,6 @@ class ConversationIndexer(
     )
 
     private fun chunkKey(messageId: String, chunkIndex: Int) = "$messageId#$chunkIndex"
-
-    /** 节点的当前消息可能因为数据损坏为空，索引时按"跳过"处理而不是崩掉 */
-    private fun me.rerere.rikkahub.data.model.MessageNode.currentMessageOrNull() =
-        if (messages.isEmpty() || selectIndex !in messages.indices) null else messages[selectIndex]
 
     companion object {
         private const val TAG = "ConversationIndexer"

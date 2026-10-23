@@ -5,8 +5,8 @@ import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import java.util.Locale
 import kotlin.uuid.Uuid
 
-const val DEFAULT_HISTORY_SEARCH_LIMIT = 6
-const val MAX_HISTORY_SEARCH_LIMIT = 12
+const val DEFAULT_HISTORY_SEARCH_LIMIT = 8
+const val MAX_HISTORY_SEARCH_LIMIT = 30
 const val HISTORY_SEARCH_PER_CONVERSATION_LIMIT = 4
 const val MAX_HISTORY_SEARCH_FETCH_LIMIT = 72
 const val DEFAULT_HISTORY_READ_BEFORE = 1

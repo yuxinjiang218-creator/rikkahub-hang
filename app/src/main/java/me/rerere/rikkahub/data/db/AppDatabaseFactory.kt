@@ -45,6 +45,15 @@ internal object AppDatabaseFactory {
                             }
                         }
                     }
+                    // 文本提取版本：规则升级后据此清空并后台重建旧索引
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS fts_meta(
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        )
+                        """.trimIndent()
+                    )
                     db.execSQL(
                         """
                         CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
