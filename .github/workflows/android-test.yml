@@ -114,7 +114,7 @@ jobs:
           # 16KB 页镜像需要较新的系统镜像与较新的模拟器
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest --stacktrace
+          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest,me.rerere.rikkahub.data.index.ConversationIndexTaskTest --stacktrace
 
       - name: 上传测试报告
         if: always()

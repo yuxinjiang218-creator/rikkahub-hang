@@ -151,6 +151,9 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         json(LOREBOOKS, Settings::lorebooks) { copy(lorebooks = it) },
         json(QUICK_MESSAGES, Settings::quickMessages) { copy(quickMessages = it) },
 
+        // 语义检索
+        json(EMBEDDING_INDEX, Settings::embeddingIndex) { copy(embeddingIndex = it) },
+
         // 备份提醒
         json(BACKUP_REMINDER_CONFIG, Settings::backupReminderConfig) { copy(backupReminderConfig = it) },
 

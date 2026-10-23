@@ -37,7 +37,7 @@ class ConversationHistoryRecallTest {
         assertEquals(6, normalizeHistoryReadAfter(99))
         assertEquals(listOf(ref), normalizeHistoryReadRefs(listOf(" $ref ", ref)))
         assertEquals(3, normalizeHistoryReadRefs((1..5).map { "${Uuid.random()}:${Uuid.random()}:${Uuid.random()}" }).size)
-        assertEquals(12, normalizeHistorySearchLimit(99))
+        assertEquals(30, normalizeHistorySearchLimit(99))
     }
 
     @Test

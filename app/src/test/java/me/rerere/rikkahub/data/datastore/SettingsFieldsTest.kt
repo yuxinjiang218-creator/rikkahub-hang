@@ -165,6 +165,7 @@ private val SAMPLE = Settings(
     webServerJwtEnabled = true,
     webServerAccessPassword = "secret",
     webServerLocalhostOnly = true,
+    embeddingIndex = EmbeddingIndexSetting(enabled = true, modelId = id(40), instruction = "instruct"),
     backupReminderConfig = BackupReminderConfig(enabled = true),
     sponsorAlertDismissedAt = 7,
 )
@@ -219,6 +220,7 @@ private val STORED_KEYS = setOf(
     "mode_injections",
     "lorebooks",
     "quick_messages",
+    "embedding_index",
     "backup_reminder_config",
     "sponsor_alert_dismissed_at",
 )

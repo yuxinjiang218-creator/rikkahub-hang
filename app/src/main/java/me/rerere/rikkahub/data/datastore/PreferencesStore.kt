@@ -175,6 +175,9 @@ class SettingsStore internal constructor(
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val QUICK_MESSAGES = stringPreferencesKey("quick_messages")
 
+        // 语义检索（向量索引）
+        val EMBEDDING_INDEX = stringPreferencesKey("embedding_index")
+
         // 备份提醒
         val BACKUP_REMINDER_CONFIG = stringPreferencesKey("backup_reminder_config")
 
