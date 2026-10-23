@@ -63,9 +63,8 @@ object TextChunker {
                 continue
             }
             val nextCursor = if (last == cursor) cursor + 1 else last
-            val isLastSpan = nextCursor >= spans.size
             val tooShort = span.length < MIN_CHARS
-            if (tooShort && chunks.isNotEmpty() && !isLastSpan) {
+            if (tooShort && chunks.isNotEmpty()) {
                 // 太短：并进上一块（不重叠，直接延长上一块）
                 val previous = chunks.removeAt(chunks.lastIndex)
                 val merged = trimRange(text, previous.start, span.end) ?: span

@@ -6,6 +6,20 @@ package me.rerere.rikkahub.data.index
  * 这类查询靠词法精确命中就够了，额外花一次 embedding 请求既慢又没必要。
  */
 object StructuralQuery {
+    private val errnoNames = listOf(
+        "SQLITE_[A-Z_]+",
+        "EAI_[A-Z_]+",
+        "ENOENT",
+        "EACCES",
+        "EPERM",
+        "ENOMEM",
+        "EINVAL",
+        "ECONNRESET",
+        "ECONNREFUSED",
+        "ETIMEDOUT",
+        "ENOTFOUND"
+    )
+
     private val patterns = listOf(
         // 绝对路径 / Windows 盘符 / 相对路径
         Regex("""(^|\s)(/|[A-Za-z]:\\|\.{1,2}/)\S+"""),
@@ -18,10 +32,7 @@ object StructuralQuery {
         // 错误码 / 状态码
         Regex("""\b(ERR|HTTP|SQLITE|E|W)[-_ ]?\d{2,5}\b""", RegexOption.IGNORE_CASE),
         // errno 与 SQLite 常量名
-        Regex(
-            """\b(SQLITE_[A-Z_]+|EAI_[A-Z_]+|ENOENT|EACCES|EPERM|ENOMEM)""" +
-                """|EINVAL|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)\b"""
-        ),
+        Regex("""\b(${errnoNames.joinToString("|")})\b"""),
         // 长十六进制（哈希、提交号）
         Regex("""\b[0-9a-f]{16,}\b""", RegexOption.IGNORE_CASE),
         // 反引号包裹的标识符
