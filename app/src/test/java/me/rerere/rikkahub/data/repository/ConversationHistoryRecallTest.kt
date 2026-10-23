@@ -9,8 +9,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
-import java.util.UUID as JavaUUID
 import kotlin.uuid.Uuid
+import java.util.UUID as JavaUUID
 
 class ConversationHistoryRecallTest {
     @Test
@@ -36,7 +36,10 @@ class ConversationHistoryRecallTest {
         assertEquals(3, normalizeHistoryReadBefore(99))
         assertEquals(6, normalizeHistoryReadAfter(99))
         assertEquals(listOf(ref), normalizeHistoryReadRefs(listOf(" $ref ", ref)))
-        assertEquals(3, normalizeHistoryReadRefs((1..5).map { "${Uuid.random()}:${Uuid.random()}:${Uuid.random()}" }).size)
+        assertEquals(
+            3,
+            normalizeHistoryReadRefs((1..5).map { "${Uuid.random()}:${Uuid.random()}:${Uuid.random()}" }).size
+        )
         assertEquals(30, normalizeHistorySearchLimit(99))
     }
 
@@ -51,7 +54,10 @@ class ConversationHistoryRecallTest {
             ),
             requestedLimit = 6,
         )
-        assertEquals(listOf(deterministicConversationId("c1"), deterministicConversationId("c2")), grouped.map { it.conversationId })
+        assertEquals(
+            listOf(deterministicConversationId("c1"), deterministicConversationId("c2")),
+            grouped.map { it.conversationId }
+        )
         assertEquals(2, grouped.first().hitCount)
         assertEquals(listOf(MessageRole.USER, MessageRole.ASSISTANT), grouped.first().rolesHit)
         assertNotNull(parseConversationHistoryRef(historySearchResultRef(result("c1", "m1", now, MessageRole.USER))))
