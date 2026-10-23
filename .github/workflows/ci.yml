@@ -74,6 +74,8 @@ jobs:
   format:
     name: 格式检查
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,6 +122,28 @@ jobs:
             git update-ref refs/remotes/origin/master "$(git rev-parse origin/main)"
             echo "created refs/remotes/origin/master -> origin/main"
           fi
+
+      # 本仓库要求不在本机构建，格式差异交给 CI 直接修好并提交；
+      # 用 GITHUB_TOKEN 推送不会再触发工作流，所以不会打转。
+      - name: spotlessApply 并提交
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew spotlessApply --stacktrace
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "格式已符合要求"
+            exit 0
+          fi
+          git --no-pager diff --stat
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "非 push 事件不做自动提交，请本地跑 spotlessApply" >&2
+            exit 1
+          fi
+          git config user.name "spotless-bot"
+          git config user.email "spotless-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "style: spotlessApply 自动格式化"
+          git push
 
       - name: spotless 检查
         run: |
