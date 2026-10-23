@@ -36,7 +36,13 @@ class ConversationIndexer(
         conversationRepository.ensureFtsIndexUpToDate()
     }
 
-    /** 处理一批任务；返回是否还有剩余工作 */
+    /**
+     * 处理一批任务；返回是否还有“现在就能干”的工作。
+     *
+     * 失败的会话会在本轮被跳过（不是死等），剩下的任务照常做完；
+     * 只有当队列里只剩失败项时返回 false，交给下一次调度重试，
+     * 免得一个探测失败的会话把整条队列饿死。
+     */
     suspend fun processPending(maxConversations: Int = DEFAULT_MAX_CONVERSATIONS): Boolean =
         withContext(Dispatchers.IO) {
             val settings = settingsStore.awaitLoaded()
@@ -47,21 +53,29 @@ class ConversationIndexer(
             }
             val store = vectorIndexProvider.get()
             var processed = 0
-            var moreWork = false
+            val deferred = HashSet<String>()
             while (processed < maxConversations) {
-                val task = conversationIndexTaskDao.nextTask() ?: break
+                val task = if (deferred.isEmpty()) {
+                    conversationIndexTaskDao.nextTask()
+                } else {
+                    conversationIndexTaskDao.nextTaskExcluding(deferred)
+                } ?: break
                 val handled = when (task.op) {
                     IndexTaskOp.DELETE.name -> handleDelete(task, store)
                     else -> handleUpsert(task, settings, target, store)
                 }
                 if (!handled) {
-                    moreWork = true
-                    break
+                    deferred += task.conversationId
+                    continue
                 }
                 processed++
             }
-            if (conversationIndexTaskDao.count() > 0) moreWork = true
-            moreWork
+            if (deferred.isNotEmpty()) {
+                Log.i(TAG, "本轮跳过 ${deferred.size} 个会话，等下次重试")
+                false
+            } else {
+                conversationIndexTaskDao.count() > 0
+            }
         }
 
     /** 会话被删：删掉向量再销任务 */
@@ -87,22 +101,22 @@ class ConversationIndexer(
             conversationIndexTaskDao.deleteIfVersionMatches(task.conversationId, task.version)
             return true
         }
-        indexConversation(conversation, settings, target, store, task.version)
-        return true
+        return indexConversation(conversation, settings, target, store, task.version)
     }
 
+    /** 返回 true 表示这次确实写完了（任务可以销）；false 表示本轮放弃，任务留着下次再来 */
     private suspend fun indexConversation(
         conversation: Conversation,
         settings: Settings,
         target: EmbeddingTarget,
         store: VectorIndex,
         expectedVersion: Long
-    ) {
+    ): Boolean {
         val conversationKey = conversation.id.toString()
         val dimension = ensureDimension(settings, target)
         if (dimension == null) {
             Log.w(TAG, "无法确定 embedding 维度，放弃本轮")
-            return
+            return false
         }
         val profile = VectorProfile(
             provider = target.fingerprint,
@@ -112,7 +126,10 @@ class ConversationIndexer(
         )
         // 先定 profile：profile 变了会清库，之后读到的签名才是当前的
         store.ensureProfile(profile)
-
+        if (store.activeProfileId() != profile.id) {
+            Log.w(TAG, "profile 在准备阶段被切走，放弃本轮")
+            return false
+        }
         // 会话换助手会改变它的可见范围（检索按 assistant 过滤），旧记录必须整体作废
         val existingAssistant = store.conversationAssistantId(conversationKey)
         if (existingAssistant != null && existingAssistant != conversation.assistantId.toString()) {
@@ -154,29 +171,42 @@ class ConversationIndexer(
         val embedded = if (pending.isEmpty()) {
             true
         } else {
-            embedAndWrite(conversationKey, pending, settings, target, store, expectedVersion)
+            embedAndWrite(conversationKey, pending, target, store, expectedVersion, profile.id)
         }
 
-        if (embedded) {
-            deleteStaleChunks(conversationKey, existing.keys, currentKeys, store)
-        }
+        // 这一步很关键：没写成就绝不能销任务，否则网络抖一下这段历史就永远缺向量了
+        if (!embedded) return false
+
+        deleteStaleChunks(conversationKey, existing.keys, currentKeys, store)
         conversationIndexTaskDao.deleteIfVersionMatches(conversationKey, expectedVersion)
         Log.i(
             TAG,
             "indexed conversation=$conversationKey chunks=${currentKeys.size} " +
                 "embedded=${pending.size} profile=${profile.id}"
         )
+        return true
     }
 
     private suspend fun embedAndWrite(
         conversationKey: String,
         pending: List<PendingChunk>,
-        settings: Settings,
         target: EmbeddingTarget,
         store: VectorIndex,
-        expectedVersion: Long
+        expectedVersion: Long,
+        expectedProfileId: String,
     ): Boolean {
         for (batch in pending.chunked(EmbeddingClient.DEFAULT_BATCH_SIZE)) {
+            // 每一批之前都重新确认：用户可能刚把开关关掉，或者换了模型；
+            // 这时候继续发请求既没用也可能把旧模型的向量写进新库
+            val latest = settingsStore.awaitLoaded().resolveEmbeddingTarget()
+            if (latest == null || latest.model.id != target.model.id) {
+                Log.i(TAG, "embedding 已被关闭或改配，停止本会话剩余批次")
+                return false
+            }
+            if (store.activeProfileId() != expectedProfileId) {
+                Log.i(TAG, "profile 在处理期间被切走，放弃本轮写入")
+                return false
+            }
             val vectors = try {
                 embeddingClient.embed(target, batch.map { it.text })
             } catch (error: Throwable) {
@@ -236,13 +266,16 @@ class ConversationIndexer(
         val store = vectorIndexProvider.get()
         store.clear()
         conversationIndexTaskDao.deleteAll()
+        // 用当前时间当版本起点：正在跑的旧任务手里的版本（可能是 1、2、3）
+        // 绝不可能和它撞上，否则旧任务会误以为自己还有效，把旧配置的向量写回来
+        val generation = System.currentTimeMillis()
         val ids = conversationRepository.getAllConversationIds()
         for (id in ids) {
             conversationIndexTaskDao.upsert(
                 ConversationIndexTaskEntity(
                     conversationId = id,
                     op = IndexTaskOp.UPSERT.name,
-                    version = 1L,
+                    version = generation,
                     updatedAt = System.currentTimeMillis()
                 )
             )

@@ -111,6 +111,30 @@ class ConversationIndexTaskTest {
     }
 
     @Test
+    fun `失败的会话不会卡住队列头`() = runBlocking {
+        dao.upsert(task(conversationId = "conv-broken", updatedAt = 1_000L))
+        dao.upsert(task(conversationId = "conv-ok", updatedAt = 2_000L))
+
+        // 第一个会话本轮失败（比如维度探测不成功），跳过它继续做后面的
+        assertEquals("conv-broken", dao.nextTask()?.conversationId)
+        assertEquals("conv-ok", dao.nextTaskExcluding(listOf("conv-broken"))?.conversationId)
+        assertNull(dao.nextTaskExcluding(listOf("conv-broken", "conv-ok")))
+    }
+
+    @Test
+    fun `重建用的版本不会和旧任务撞上`() = runBlocking {
+        // 旧任务手里的版本是很小的数，重建时改用时间戳当版本，
+        // 正在跑的旧任务就不会误判自己仍然有效
+        dao.upsert(task(version = 1L, updatedAt = 1_000L))
+        val generation = System.currentTimeMillis()
+        dao.deleteAll()
+        dao.upsert(task(version = generation, updatedAt = generation))
+
+        assertEquals(generation, dao.versionOf("conv-1"))
+        assertTrue(generation != 1L)
+    }
+
+    @Test
     fun `待处理会话列表可用于检索侧排除`() = runBlocking {
         dao.upsert(task(conversationId = "conv-a", updatedAt = 1_000L))
         dao.upsert(task(conversationId = "conv-b", updatedAt = 2_000L))

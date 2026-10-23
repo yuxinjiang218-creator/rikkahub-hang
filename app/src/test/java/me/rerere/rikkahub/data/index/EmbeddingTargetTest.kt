@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.data.index
 
+import kotlinx.serialization.json.JsonPrimitive
+import me.rerere.ai.provider.CustomBody
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
@@ -101,6 +104,42 @@ class EmbeddingTargetTest {
             )
         ).resolveEmbeddingTarget()!!
         assertTrue(a.fingerprint != b.fingerprint)
+    }
+
+    @Test
+    fun `模型自定义参数不同就是不同的向量空间`() {
+        // 同样的模型 id 配上不同的 dimensions/任务前缀，出来的向量不能混用
+        val plain = settings().resolveEmbeddingTarget()!!
+        val withBody = settings(
+            providers = listOf(
+                ProviderSetting.OpenAI(
+                    name = "SiliconFlow",
+                    baseUrl = "https://api.siliconflow.cn/v1",
+                    models = listOf(
+                        embeddingModel.copy(
+                            customBodies = listOf(
+                                CustomBody(key = "dimensions", value = JsonPrimitive(512))
+                            )
+                        )
+                    ),
+                )
+            )
+        ).resolveEmbeddingTarget()!!
+        val withHeader = settings(
+            providers = listOf(
+                ProviderSetting.OpenAI(
+                    name = "SiliconFlow",
+                    baseUrl = "https://api.siliconflow.cn/v1",
+                    models = listOf(
+                        embeddingModel.copy(
+                            customHeaders = listOf(CustomHeader(name = "X-Task", value = "query"))
+                        )
+                    ),
+                )
+            )
+        ).resolveEmbeddingTarget()!!
+        assertTrue(plain.fingerprint != withBody.fingerprint)
+        assertTrue(plain.fingerprint != withHeader.fingerprint)
     }
 
     @Test

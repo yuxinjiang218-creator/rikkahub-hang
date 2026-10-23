@@ -11,6 +11,13 @@ interface ConversationIndexTaskDAO {
     @Query("SELECT * FROM conversation_index_task ORDER BY updated_at ASC LIMIT 1")
     suspend fun nextTask(): ConversationIndexTaskEntity?
 
+    /** 跳过本轮已经失败的会话，避免一个坏任务卡住整条队列 */
+    @Query(
+        "SELECT * FROM conversation_index_task WHERE conversation_id NOT IN (:excluded) " +
+            "ORDER BY updated_at ASC LIMIT 1"
+    )
+    suspend fun nextTaskExcluding(excluded: Collection<String>): ConversationIndexTaskEntity?
+
     @Query("SELECT * FROM conversation_index_task WHERE conversation_id = :conversationId")
     suspend fun find(conversationId: String): ConversationIndexTaskEntity?
 

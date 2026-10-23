@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.index.ConversationIndexer
 import me.rerere.rikkahub.data.index.IndexTaskScheduler
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.skills.SkillManager
@@ -151,6 +152,14 @@ class RikkaHubApp : Application() {
 
     private fun scheduleIndexMaintenance() {
         get<AppScope>().launch(Dispatchers.IO) {
+            // 关键词索引的提取规则升级要重建，这一步不联网，所以放在启动时直接做：
+            // 交给 worker 的话，离线用户会在升级后一直搜到已经不该索引的工具输出
+            runCatching {
+                get<ConversationIndexer>().ensureFtsReady()
+            }.onFailure {
+                Log.e(TAG, "ensureFtsReady failed", it)
+            }
+            // 向量部分要联网，交给带网络约束的 worker
             runCatching {
                 get<IndexTaskScheduler>().schedule()
             }.onFailure {

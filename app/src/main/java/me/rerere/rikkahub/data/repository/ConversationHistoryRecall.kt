@@ -180,6 +180,8 @@ fun selectHistorySearchCandidates(
     results: List<MessageSearchResult>,
     requestedLimit: Int,
     perConversationLimit: Int = 4,
+    // 翻页时要取 offset+limit 条，不能按单页上限截断，所以上限做成可调的
+    maxLimit: Int = MAX_HISTORY_SEARCH_LIMIT,
 ): List<MessageSearchResult> {
     val counts = mutableMapOf<String, Int>()
     return results.filter { result ->
@@ -188,7 +190,7 @@ fun selectHistorySearchCandidates(
             counts[result.conversationId] = count + 1
             true
         }
-    }.take(normalizeHistorySearchLimit(requestedLimit))
+    }.take(requestedLimit.coerceIn(1, maxLimit))
 }
 
 private fun HistorySearchRoute.toRecallSource(): RecallSource = when (this) {

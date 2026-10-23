@@ -49,6 +49,7 @@ import me.rerere.rikkahub.data.index.StructuralQuery
 import me.rerere.rikkahub.data.index.TextChunker
 import me.rerere.rikkahub.data.index.VectorFilter
 import me.rerere.rikkahub.data.index.VectorIndexProvider
+import me.rerere.rikkahub.data.index.VectorProfile
 import me.rerere.rikkahub.data.index.fuseHistoryResults
 import me.rerere.rikkahub.data.index.resolveEmbeddingTarget
 import me.rerere.rikkahub.data.index.selectedMessageOrNull
@@ -610,7 +611,7 @@ class ConversationRepository(
                 vectorOutcome.second
             )
         }
-        val vectorResults = vectorOutcome.first
+        val vectorResults = filterNewHistorySearchResults(vectorOutcome.first, excludeSnippetKeys)
         if (vectorResults.isEmpty() && filtered.isEmpty()) {
             return HistorySearchOutcome(emptyList(), vectorOutcome.second)
         }
@@ -618,10 +619,11 @@ class ConversationRepository(
             lexicalRoutes = lexicalRoutes,
             vectorResults = vectorResults,
             requestedLimit = normalizedLimit,
+            // 指定会话时要翻页，块内上限必须跟着 offset 一起放大，否则第二页直接空
             perConversationLimit = if (focusConversationId == null) {
-                RankedFusion.perConversationCap(normalizedLimit)
+                RankedFusion.perConversationCap(normalizedLimit + normalizedOffset)
             } else {
-                normalizedLimit
+                normalizedLimit + normalizedOffset
             },
             offset = normalizedOffset,
         )
@@ -643,6 +645,7 @@ class ConversationRepository(
             } else {
                 limit + offset
             },
+            maxLimit = Int.MAX_VALUE,
         )
         return HistorySearchOutcome(
             results = selected.drop(offset),
@@ -664,7 +667,9 @@ class ConversationRepository(
     ): Pair<List<MessageSearchResult>, SemanticState> {
         val instruction = settingsStore.awaitLoaded().embeddingIndex.instruction
         val queryText = if (instruction.isBlank()) keyword else "$instruction\n$keyword"
-        val cached = queryEmbeddingCache[queryText]
+        // 缓存 key 必须带上模型和指令：只按文本做 key，切模型后会拿旧模型的向量去搜新库
+        val cacheKey = "${target.model.id}|${instruction.hashCode()}|$queryText"
+        val cached = queryEmbeddingCache[cacheKey]
         val embedding = cached ?: try {
             withTimeoutOrNull(QUERY_EMBEDDING_TIMEOUT_MS) {
                 embeddingClient.embed(target, listOf(queryText)).firstOrNull()
@@ -676,12 +681,23 @@ class ConversationRepository(
         }
         if (cached == null && embedding.isNotEmpty()) {
             if (queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_SIZE) queryEmbeddingCache.clear()
-            queryEmbeddingCache[queryText] = embedding
+            queryEmbeddingCache[cacheKey] = embedding
         }
         if (embedding.isEmpty()) return emptyList<MessageSearchResult>() to SemanticState.FAILED
 
         val store = runCatching { vectorIndexProvider.get() }.getOrNull()
             ?: return emptyList<MessageSearchResult>() to SemanticState.NOT_CONFIGURED
+        // 库里的 profile 必须就是当前设置该用的那个，否则拿新的查询向量去搜旧库只会得到垃圾
+        val expectedProfile = VectorProfile(
+            provider = target.fingerprint,
+            model = target.model.modelId,
+            dimension = embedding.size,
+            instruction = instruction
+        )
+        if (store.activeProfileId() != expectedProfile.id) {
+            Log.i(TAG, "向量库 profile 与当前设置不一致，本次不做语义召回")
+            return emptyList<MessageSearchResult>() to SemanticState.INDEXING
+        }
         val hits = runCatching {
             store.search(
                 embedding = embedding,

@@ -18,7 +18,21 @@ data class EmbeddingTarget(
     val provider: ProviderSetting.OpenAI,
     val model: Model
 ) {
-    val fingerprint: String = "$providerName:${provider.baseUrl}"
+    /**
+     * 进 profile 的端点指纹。
+     *
+     * 除了端点，还要带上模型的自定义 headers/body：同样的模型 id 配上不同的
+     * `dimensions`、任务前缀之类的参数，出来的向量根本不是一个空间。
+     */
+    val fingerprint: String = buildString {
+        append(providerName).append(':').append(provider.baseUrl)
+        if (model.customHeaders.isNotEmpty()) {
+            append("|h:").append(model.customHeaders.hashCode().toUInt().toString(16))
+        }
+        if (model.customBodies.isNotEmpty()) {
+            append("|b:").append(model.customBodies.hashCode().toUInt().toString(16))
+        }
+    }
 }
 
 /** 从设置里解析出可用的 embedding 目标，未启用或模型不合法时返回 null */

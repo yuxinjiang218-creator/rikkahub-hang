@@ -9,8 +9,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
-import kotlin.uuid.Uuid
 import java.util.UUID as JavaUUID
+import kotlin.uuid.Uuid
 
 class ConversationHistoryRecallTest {
     @Test
@@ -41,6 +41,18 @@ class ConversationHistoryRecallTest {
             normalizeHistoryReadRefs((1..5).map { "${Uuid.random()}:${Uuid.random()}:${Uuid.random()}" }).size
         )
         assertEquals(30, normalizeHistorySearchLimit(99))
+    }
+
+    @Test
+    fun `paging can go past the single page cap`() {
+        val many = (1..40).map { result("c$it", "m$it", Instant.now(), MessageRole.USER, "snippet-$it") }
+
+        // 默认单页上限 30，翻页时要能取到 offset+limit 条
+        assertEquals(30, selectHistorySearchCandidates(many, requestedLimit = 40).size)
+        assertEquals(
+            38,
+            selectHistorySearchCandidates(many, requestedLimit = 38, maxLimit = Int.MAX_VALUE).size,
+        )
     }
 
     @Test
