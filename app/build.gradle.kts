@@ -293,6 +293,9 @@ dependencies {
     // sqlite-android (requery SQLite for Android)
     implementation(libs.sqlite.android)
 
+    // SQLite 向量扩展，本地语义索引用（向量库另存 noBackupFilesDir 缓存）
+    implementation(libs.sqlite.vector)
+
     // modules
     implementation(project(":ai"))
     implementation(project(":web"))

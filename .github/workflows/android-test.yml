@@ -1,0 +1,122 @@
+name: Android Instrumented Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'codex/**'
+  pull_request:
+
+concurrency:
+  group: android-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instrumented:
+    name: 向量索引（${{ matrix.name }}）
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 常规 4KB 页设备
+          - name: API 34 / x86_64
+            api-level: 34
+            target: google_apis
+            abi: x86_64
+            profile: ''
+          # 16KB 页设备：Android 15+ 的页大小变更会直接让 4KB 对齐的原生库加载失败
+          - name: API 36 / x86_64 / 16KB 页
+            api-level: 36
+            target: google_apis_ps16k
+            abi: x86_64
+            profile: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'jetbrains'
+          java-version: '21'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web-ui/pnpm-lock.yaml
+
+      - name: Install web-ui dependencies
+        working-directory: web-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+
+      - name: 检查原生库页对齐
+        run: |
+          set -euo pipefail
+          # 上传前先静态确认：16KB 页设备要求 LOAD 段 p_align == 0x4000
+          BAD=0
+          for so in $(find . -path ./build -prune -o -name "*.so" -print | grep -E "vector|simple"); do
+            ALIGN=$(readelf -lW "$so" | awk '/LOAD/{print $NF}' | sort -u | tr '\n' ' ')
+            echo "$so -> align: $ALIGN"
+            case "$ALIGN" in
+              *0x4000*) ;;
+              *) echo "  !! 未按 16KB 页对齐"; BAD=1 ;;
+            esac
+          done
+          if [ "$BAD" = "1" ]; then
+            echo "存在未按 16KB 页对齐的原生库" >&2
+            exit 1
+          fi
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 运行向量索引测试
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.abi }}
+          # 16KB 页镜像需要较新的系统镜像与较新的模拟器
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            chmod +x gradlew
+            ./gradlew :app:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest \
+              --stacktrace
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-${{ matrix.api-level }}-${{ github.sha }}
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+          if-no-files-found: warn
