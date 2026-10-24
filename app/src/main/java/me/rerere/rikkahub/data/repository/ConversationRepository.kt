@@ -78,12 +78,6 @@ class ConversationRepository(
 
         // 800ms 对云端 embedding 太抠了，跳一下就白丢一轮召回，宽松一点
         private const val QUERY_EMBEDDING_TIMEOUT_MS = 3000L
-
-        // 纯向量命中的 cosine 相似度下限。没有它时任何 query 都能刨出一池噪声：
-        // 结果永不空、分页永不终止、无关短消息还会随机浮上来。
-        // 偏保守（宁可放过噪声也不误杀长块对短词的命中），要拧就改这一个数
-        private const val MIN_VECTOR_SIMILARITY = 0.4
-
         // 当前会话永远排在索引队列里（每轮都在写新消息），为它单独发一句
         // “结果不含它们” 等于 100% 误报，所以先把当前会话排掉，再看积压是否真的值得提
         private const val INDEXING_BACKLOG_THRESHOLD = 8
@@ -530,6 +524,7 @@ class ConversationRepository(
             role = null,
             fetchLimit = historyFetchLimit(lexical.size.coerceAtLeast(DEFAULT_HISTORY_SEARCH_LIMIT)),
             excludeConversationIds = pending,
+            minSimilarity = settings.embeddingIndex.minSimilarity,
         )
         val vectorResults = recall.results
         val state = recall.state
@@ -686,6 +681,7 @@ class ConversationRepository(
             role = role,
             fetchLimit = fetchLimit,
             excludeConversationIds = pending,
+            minSimilarity = settings.embeddingIndex.minSimilarity,
         )
         // 工具路径：模型要知道语义这一段为什么没参与，否则它只会以为「搜不到」
         if (vectorOutcome.state != SemanticState.OK && vectorOutcome.state != SemanticState.INDEXING) {
@@ -763,6 +759,7 @@ class ConversationRepository(
         role: MessageRole?,
         fetchLimit: Int,
         excludeConversationIds: Set<String>,
+        minSimilarity: Double,
     ): RecallResult {
         val queryText = keyword
         // 缓存 key 必须带上端点指纹（端点 + 自定义 headers/body）而不只是模型 id：
@@ -815,7 +812,7 @@ class ConversationRepository(
             store.search(
                 embedding = embedding,
                 limit = fetchLimit,
-                minSimilarity = MIN_VECTOR_SIMILARITY,
+                minSimilarity = minSimilarity,
                 filter = VectorFilter(
                     conversationId = focusConversationId?.toString(),
                     excludeConversationId = currentConversationId?.toString(),
@@ -833,11 +830,6 @@ class ConversationRepository(
             )
         }
         val conversations = mutableMapOf<Uuid, Conversation?>()
-        // 把“最好的一条到底有多像”抠下来：阈值要调时，看这一行就知道该往哪边动
-        Log.d(
-            TAG,
-            "向量召回 ${hits.size} 条，最相似 ${hits.firstOrNull()?.let { 1.0 - it.distance } ?: "无"}（下限 $MIN_VECTOR_SIMILARITY）"
-        )
         val matched = ArrayList<MessageSearchResult>(hits.size)
         for (hit in hits) {
             val conversationId = runCatching { Uuid.parse(hit.conversationId) }.getOrNull() ?: continue

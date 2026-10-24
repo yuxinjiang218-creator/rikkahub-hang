@@ -1695,6 +1695,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_semantic_switch_section">开关</string>
   <string name="setting_semantic_enable">语义检索</string>
   <string name="setting_semantic_enable_desc">开启后，聊天正文会被发送到所选模型的服务商来生成向量；关闭时只用本地关键词搜索，不发出任何内容。</string>
+  <string name="setting_semantic_similarity">语义匹配门槛</string>
+  <string name="setting_semantic_similarity_desc">只影响纯语义命中：相似度低于这个值的结果会被直接丢掉。调高更准但可能漏，调低更全但噪声多；改成 0 等于不设门槛。</string>
   <string name="setting_semantic_status_section">索引状态</string>
   <string name="setting_semantic_indexed">已索引 %1$d 块 / %2$d 个会话</string>
   <string name="setting_semantic_cache_size">缓存占用 %s</string>

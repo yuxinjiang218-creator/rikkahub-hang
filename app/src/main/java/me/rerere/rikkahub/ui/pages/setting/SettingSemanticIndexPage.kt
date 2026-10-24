@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -21,8 +23,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.EmbeddingIndexSetting
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.CardGroupValue
 import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -114,6 +118,28 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
                             Text(stringResource(R.string.setting_semantic_enable_desc))
                         },
                     )
+                    // 阈值是模型相关的：不同模型、不同语言的分数分布差很多，只能让用户在自己的模型上调
+                    if (state.enabled) {
+                        formItem(
+                            headlineContent = { Text(stringResource(R.string.setting_semantic_similarity)) },
+                            supportingContent = {
+                                Text(stringResource(R.string.setting_semantic_similarity_desc))
+                            },
+                            trailingContent = {
+                                CardGroupValue("%.2f".format(state.minSimilarity))
+                            },
+                        ) {
+                            Slider(
+                                value = state.minSimilarity.toFloat(),
+                                onValueChange = { vm.setMinSimilarity(it.toDouble()) },
+                                valueRange = EmbeddingIndexSetting.MIN_SIMILARITY_LOWER_BOUND.toFloat()..
+                                    EmbeddingIndexSetting.MIN_SIMILARITY_UPPER_BOUND.toFloat(),
+                                // 0.05 一格：从 0 到 0.9 共 18 段
+                                steps = 17,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                 }
             }
 

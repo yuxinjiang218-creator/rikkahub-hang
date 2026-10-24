@@ -1693,6 +1693,8 @@
   <string name="setting_semantic_switch_section">Switch</string>
   <string name="setting_semantic_enable">Semantic search</string>
   <string name="setting_semantic_enable_desc">When on, chat text is sent to the selected model\'s provider to compute embeddings. When off, only the local keyword search is used and nothing leaves the device.</string>
+  <string name="setting_semantic_similarity">Semantic match threshold</string>
+  <string name="setting_semantic_similarity_desc">Only affects purely semantic hits: results below this similarity are dropped. Higher is stricter but may miss things; lower is broader but noisier. Set it to 0 to disable the floor.</string>
   <string name="setting_semantic_status_section">Index status</string>
   <string name="setting_semantic_indexed">%1$d chunks / %2$d conversations indexed</string>
   <string name="setting_semantic_cache_size">Cache size: %s</string>

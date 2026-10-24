@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.datastore.EmbeddingIndexSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.index.ConversationIndexer
@@ -27,6 +28,8 @@ data class SemanticIndexUiState(
     val ftsProgress: Int = 0,
     val ftsTotal: Int = 0,
     val busy: Boolean = false,
+    /** 纯语义命中的相似度下限，用户在页面上调 */
+    val minSimilarity: Double = EmbeddingIndexSetting.DEFAULT_MIN_SIMILARITY,
     /** 后台是否正在索引，以及进度 */
     val workerRunning: Boolean = false,
     val workerProcessed: Int = 0,
@@ -60,6 +63,7 @@ class SemanticIndexVM(
                 _state.value = _state.value.copy(
                     enabled = settings.embeddingIndex.enabled,
                     modelId = settings.embeddingIndex.modelId,
+                    minSimilarity = settings.embeddingIndex.minSimilarity,
                     ftsRebuilding = conversationRepository.ftsRebuildState.value.running,
                 )
             }
@@ -79,6 +83,16 @@ class SemanticIndexVM(
             }
         }
         refresh()
+    }
+
+    /** 相似度下限只影响召回，不用重建索引，改了立即生效 */
+    fun setMinSimilarity(value: Double) {
+        val coerced = EmbeddingIndexSetting.coerceMinSimilarity(value)
+        viewModelScope.launch {
+            settingsStore.update {
+                it.copy(embeddingIndex = it.embeddingIndex.copy(minSimilarity = coerced))
+            }
+        }
     }
 
     fun setEnabled(enabled: Boolean) {
