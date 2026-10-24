@@ -108,7 +108,19 @@ interface VectorIndex {
     /** 删除某条消息里指定的块（分块结果变短时用） */
     fun deleteChunks(messageId: String, chunkIndexes: Collection<Int>)
 
-    fun search(embedding: FloatArray, limit: Int, filter: VectorFilter = VectorFilter()): List<VectorHit>
+    /**
+     * 近邻召回。
+     *
+     * [minSimilarity] 是相似度下限（0-1，越大越严），低于它的命中直接不进候选池：
+     * 没有下限时任何 query 都能刨出一堆「字面不像、语义也不像」的短消息，
+     * 于是结果永不空、分页永不终止、敏感内容还会随机浮上来。
+     */
+    fun search(
+        embedding: FloatArray,
+        limit: Int,
+        filter: VectorFilter = VectorFilter(),
+        minSimilarity: Double = 0.0,
+    ): List<VectorHit>
 
     fun clear()
 

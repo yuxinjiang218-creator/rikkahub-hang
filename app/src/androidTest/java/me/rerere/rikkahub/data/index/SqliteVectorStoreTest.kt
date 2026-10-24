@@ -268,6 +268,26 @@ class SqliteVectorStoreTest {
     }
 
     @Test
+    fun distanceIsOneMinusCosine() {
+        // 相似度下限是靠 1 - distance 算的，这个口径要是反了，语义召回会被整体过滤掉，
+        // 而且表面上只会表现为「搜不到」，没人能从日志里看出来。所以直接钉死它。
+        val axis = FloatArray(dimension) { if (it == 0) 1f else 0f }
+        val same = axis.copyOf()
+        val orthogonal = FloatArray(dimension) { if (it == 1) 1f else 0f }
+        store.upsert(listOf(record("m-same", same), record("m-orth", orthogonal)))
+
+        val hits = store.search(axis, 5).associateBy { it.messageId }
+        val sameDistance = hits.getValue("m-same").distance
+        val orthDistance = hits.getValue("m-orth").distance
+        Log.i("SqliteVectorStoreTest", "distance same=$sameDistance orth=$orthDistance")
+        assertTrue("同向应当距离接近 0，实际 $sameDistance", kotlin.math.abs(sameDistance) < 0.02)
+        assertTrue("正交应当距离接近 1，实际 $orthDistance", kotlin.math.abs(orthDistance - 1.0) < 0.02)
+        // 下限要能把正交的那条挡掉
+        val filtered = store.search(axis, 5, minSimilarity = 0.9)
+        assertEquals(listOf("m-same"), filtered.map { it.messageId })
+    }
+
+    @Test
     fun recoveredProfileKeepsDimension() {
         val random = Random(37)
         val vector = unitVector(random)

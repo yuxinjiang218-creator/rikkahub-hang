@@ -26,10 +26,12 @@ data class MessageSearchResult(
     val matchedBy: Set<RecallSource> = emptySet(),
 )
 
+// 末尾一律挂 message_id：rank/update_at 大量平局，没有全序 tiebreaker 时
+// 同一 query 两次调用会拿到不同的候选集和不同顺序，分页就彻底不可复现
 enum class MessageSearchSort(val orderBy: String) {
-    RELEVANCE("rank, update_at DESC"),
-    NEWEST_FIRST("update_at DESC, rank"),
-    OLDEST_FIRST("update_at ASC, rank"),
+    RELEVANCE("rank, update_at DESC, message_id"),
+    NEWEST_FIRST("update_at DESC, rank, message_id"),
+    OLDEST_FIRST("update_at ASC, rank, message_id"),
 }
 
 private const val TAG = "MessageFtsManager"

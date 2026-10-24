@@ -75,7 +75,16 @@ class ConversationRepository(
 ) {
     companion object {
         private const val TAG = "ConversationRepository"
-        private const val QUERY_EMBEDDING_TIMEOUT_MS = 800L
+
+        // 800ms 对云端 embedding 太抠了，跳一下就白丢一轮召回，宽松一点
+        private const val QUERY_EMBEDDING_TIMEOUT_MS = 3000L
+        // 纯向量命中的 cosine 相似度下限。没有它时任何 query 都能刨出一池噪声：
+        // 结果永不空、分页永不终止、无关短消息还会随机浮上来。
+        // 偏保守（宁可放过噪声也不误杀长块对短词的命中），要拧就改这一个数
+        private const val MIN_VECTOR_SIMILARITY = 0.4
+        // 当前会话永远排在索引队列里（每轮都在写新消息），为它单独发一句
+        // “结果不含它们” 等于 100% 误报，所以先把当前会话排掉，再看积压是否真的值得提
+        private const val INDEXING_BACKLOG_THRESHOLD = 8
         private const val QUERY_EMBEDDING_CACHE_SIZE = 32
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
@@ -723,7 +732,8 @@ class ConversationRepository(
     ): HistorySearchOutcome {
         val selected = selectHistorySearchCandidates(
             lexical,
-            requestedLimit = limit + offset,
+            // 池子整段展开才能给出准确的 total 和真实的翻页终点
+            requestedLimit = Int.MAX_VALUE,
             perConversationLimit = if (focusConversationId == null) {
                 RankedFusion.perConversationCap(limit + offset)
             } else {
@@ -731,11 +741,13 @@ class ConversationRepository(
             },
             maxLimit = Int.MAX_VALUE,
         )
+        val page = selected.drop(offset).take(limit)
         return HistorySearchOutcome(
-            results = selected.drop(offset),
+            results = page,
             semanticState = state,
-            hasMore = lexical.size > selected.size,
+            hasMore = selected.size > offset + page.size,
             semanticDetail = detail,
+            totalCandidates = selected.size,
         )
     }
 
@@ -801,6 +813,7 @@ class ConversationRepository(
             store.search(
                 embedding = embedding,
                 limit = fetchLimit,
+                minSimilarity = MIN_VECTOR_SIMILARITY,
                 filter = VectorFilter(
                     conversationId = focusConversationId?.toString(),
                     excludeConversationId = currentConversationId?.toString(),
@@ -818,6 +831,11 @@ class ConversationRepository(
             )
         }
         val conversations = mutableMapOf<Uuid, Conversation?>()
+        // 把“最好的一条到底有多像”抠下来：阈值要调时，看这一行就知道该往哪边动
+        Log.d(
+            TAG,
+            "向量召回 ${hits.size} 条，最相似 ${hits.firstOrNull()?.let { 1.0 - it.distance } ?: "无"}（下限 $MIN_VECTOR_SIMILARITY）"
+        )
         val matched = ArrayList<MessageSearchResult>(hits.size)
         for (hit in hits) {
             val conversationId = runCatching { Uuid.parse(hit.conversationId) }.getOrNull() ?: continue
@@ -847,15 +865,17 @@ class ConversationRepository(
                 matchedBy = setOf(RecallSource.VECTOR),
             )
         }
-        // 还有会话排在索引队列里，这次结果是不完整的，得如实告诉模型
-        return if (excludeConversationIds.isEmpty()) {
-            RecallResult(matched, SemanticState.OK, null)
-        } else {
+        // 只有积压真的多到会改变结论时才提一句。当前会话本来就排除在召回之外（它就在上下文里），
+        // 把它算进“还没建好”的名单里会让这句话变成每次都出现的噪声
+        val backlog = excludeConversationIds.count { it != currentConversationId?.toString() }
+        return if (backlog >= INDEXING_BACKLOG_THRESHOLD) {
             RecallResult(
                 matched,
                 SemanticState.INDEXING,
-                "还有 ${excludeConversationIds.size} 个会话在等待建索引，本次结果不含它们"
+                "还有 $backlog 个会话在等待建索引，本次结果不含它们"
             )
+        } else {
+            RecallResult(matched, SemanticState.OK, null)
         }
     }
 

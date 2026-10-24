@@ -172,7 +172,8 @@ class SqliteVectorStore private constructor(
     override fun search(
         embedding: FloatArray,
         limit: Int,
-        filter: VectorFilter
+        filter: VectorFilter,
+        minSimilarity: Double,
     ): List<VectorHit> = synchronized(lock) {
         checkOpen()
         val active = requireProfile()
@@ -206,6 +207,12 @@ class SqliteVectorStore private constructor(
             conditions.append(" AND cv.role = ?")
             args += it
         }
+        // 相似度下限直接下推到 SQL，否则先 LIMIT 再过滤，噪声会把名额吃光，真结果反而被截掉
+        if (minSimilarity > 0.0) {
+            // 显式 CAST：绑定的是 TEXT，如果表达式带着「无亲和性」，比较会退化成存储类比较，过滤会静默失效
+            conditions.append(" AND s.distance <= CAST(? AS REAL)")
+            args += (1.0 - minSimilarity).coerceIn(0.0, 2.0).toString()
+        }
 
         val sql = """
             SELECT cv.conversation_id, cv.node_id, cv.message_id, cv.chunk_index,
@@ -214,7 +221,7 @@ class SqliteVectorStore private constructor(
             JOIN vector_full_scan('$TABLE_CHUNKS', '$COLUMN_VECTOR', ${hexLiteral(quantized)}) AS s
               ON cv.rowid = s.rowid
             WHERE $conditions
-            ORDER BY s.distance
+            ORDER BY s.distance, cv.message_id, cv.chunk_index
             LIMIT $cappedLimit
         """.trimIndent()
 

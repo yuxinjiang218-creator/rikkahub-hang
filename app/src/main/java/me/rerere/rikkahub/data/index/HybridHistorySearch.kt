@@ -45,7 +45,9 @@ data class HistorySearchOutcome(
     val results: List<MessageSearchResult>,
     val semanticState: SemanticState,
     val hasMore: Boolean = false,
-    val semanticDetail: String? = null
+    val semanticDetail: String? = null,
+    /** 这次查询在候选池里一共能翻出多少条（分页的终止依据，与 limit 无关） */
+    val totalCandidates: Int = results.size
 )
 
 /**
@@ -93,16 +95,19 @@ fun fuseHistoryResults(
 
     val fused = RankedFusion.fuse(rankedLists)
     if (fused.isEmpty()) {
-        return HistorySearchOutcome(emptyList(), SemanticState.OK, hasMore = false)
+        return HistorySearchOutcome(emptyList(), SemanticState.OK, hasMore = false, totalCandidates = 0)
     }
-    val window = offset + requestedLimit
-    val selected = RankedFusion.select(fused, limit = window, cap = perConversationLimit)
-    val page = selected.drop(offset).mapNotNull { item ->
+    // 先按单会话上限展开成完整的可分页序列，再切页。
+    // 之前用 offset+limit 当窗口长度：offset 越过池尾时会切出空页而 hasMore 仍为 true，
+    // 调用方只能靠「撞到空」这种隐式信号判断终止。
+    val pageable = RankedFusion.select(fused, limit = Int.MAX_VALUE, cap = perConversationLimit)
+    val page = pageable.drop(offset).take(requestedLimit).mapNotNull { item ->
         byKey[item.messageKey]?.copy(matchedBy = item.matchedBy)
     }
     return HistorySearchOutcome(
         results = page,
         semanticState = SemanticState.OK,
-        hasMore = fused.size > selected.size
+        hasMore = pageable.size > offset + page.size,
+        totalCandidates = pageable.size,
     )
 }

@@ -74,7 +74,35 @@ class HybridHistorySearchTest {
         )
         assertEquals(2, outcome.results.size)
         assertTrue(outcome.results.all { it.conversationId == "conv-a" })
-        assertTrue("被截住了就说明还有更多", outcome.hasMore)
+        assertEquals("池子已经被单会话上限压到 2 条，后面确实没有了", 2, outcome.totalCandidates)
+        assertFalse("上限压完就是终点，不能报 has_more", outcome.hasMore)
+    }
+
+    @Test
+    fun `paging past the pool tail reports no more`() {
+        val lexical = (1..6).map { result("m$it", conversationId = "conv-$it") }
+        val outcome = fuseHistoryResults(
+            lexicalRoutes = listOf(RecallSource.RAW to lexical),
+            vectorResults = emptyList(),
+            requestedLimit = 3,
+            perConversationLimit = 1,
+            offset = 2000,
+        )
+        assertTrue("越过池尾应该返回空页", outcome.results.isEmpty())
+        assertFalse("空页必须同时报没更多，否则调用方只能撞空才知道停", outcome.hasMore)
+        assertEquals(6, outcome.totalCandidates)
+    }
+
+    @Test
+    fun `equal score and equal rank fall back to a total order`() {
+        // 两路各自的第 1 名分数完全相等，没有 messageKey 兜底时顺序就取决于 hash 遍历
+        val outcome = fuseHistoryResults(
+            lexicalRoutes = listOf(RecallSource.RAW to listOf(result("m2"))),
+            vectorResults = listOf(result("m1")),
+            requestedLimit = 5,
+            perConversationLimit = 5,
+        )
+        assertEquals(listOf("m1", "m2"), outcome.results.map { it.messageId })
     }
 
     @Test
