@@ -78,10 +78,12 @@ class ConversationRepository(
 
         // 800ms 对云端 embedding 太抠了，跳一下就白丢一轮召回，宽松一点
         private const val QUERY_EMBEDDING_TIMEOUT_MS = 3000L
+
         // 纯向量命中的 cosine 相似度下限。没有它时任何 query 都能刨出一池噪声：
         // 结果永不空、分页永不终止、无关短消息还会随机浮上来。
         // 偏保守（宁可放过噪声也不误杀长块对短词的命中），要拧就改这一个数
         private const val MIN_VECTOR_SIMILARITY = 0.4
+
         // 当前会话永远排在索引队列里（每轮都在写新消息），为它单独发一句
         // “结果不含它们” 等于 100% 误报，所以先把当前会话排掉，再看积压是否真的值得提
         private const val INDEXING_BACKLOG_THRESHOLD = 8
