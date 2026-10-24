@@ -134,8 +134,12 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
                                 onValueChange = { vm.setMinSimilarity(it.toDouble()) },
                                 valueRange = EmbeddingIndexSetting.MIN_SIMILARITY_LOWER_BOUND.toFloat()..
                                     EmbeddingIndexSetting.MIN_SIMILARITY_UPPER_BOUND.toFloat(),
-                                // 0.05 一格：从 0 到 0.9 共 18 段
-                                steps = 17,
+                                // 按常数算出格数，别再手写一个和范围脱钩的数字
+                                steps = (
+                                    (EmbeddingIndexSetting.MIN_SIMILARITY_UPPER_BOUND -
+                                        EmbeddingIndexSetting.MIN_SIMILARITY_LOWER_BOUND) /
+                                        EmbeddingIndexSetting.MIN_SIMILARITY_STEP
+                                    ).toInt() - 1,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }

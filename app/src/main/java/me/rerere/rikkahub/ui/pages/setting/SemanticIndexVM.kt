@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.EmbeddingIndexSetting
-import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.index.ConversationIndexer
 import me.rerere.rikkahub.data.index.IndexStatusTracker
@@ -27,7 +26,6 @@ data class SemanticIndexUiState(
     val ftsRebuilding: Boolean = false,
     val ftsProgress: Int = 0,
     val ftsTotal: Int = 0,
-    val busy: Boolean = false,
     /** 纯语义命中的相似度下限，用户在页面上调 */
     val minSimilarity: Double = EmbeddingIndexSetting.DEFAULT_MIN_SIMILARITY,
     /** 后台是否正在索引，以及进度 */
@@ -52,8 +50,6 @@ class SemanticIndexVM(
     private val indexTaskScheduler: IndexTaskScheduler,
     private val indexStatusTracker: IndexStatusTracker,
 ) : ViewModel() {
-    val settings: StateFlow<Settings> = settingsStore.settingsFlow
-
     private val _state = MutableStateFlow(SemanticIndexUiState())
     val state: StateFlow<SemanticIndexUiState> = _state.asStateFlow()
 
@@ -109,20 +105,16 @@ class SemanticIndexVM(
 
     fun rebuild() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
             conversationIndexer.rebuildAll()
             indexTaskScheduler.schedule(debounceSeconds = 0L)
             refresh()
-            _state.value = _state.value.copy(busy = false)
         }
     }
 
     fun clear() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
             conversationIndexer.clearAll()
             refresh()
-            _state.value = _state.value.copy(busy = false)
         }
     }
 
