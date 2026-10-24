@@ -3,17 +3,12 @@ package me.rerere.rikkahub.ui.pages.setting
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,22 +40,16 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val settings by vm.settings.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val models = remember(settings.providers) { vm.embeddingModels(settings) }
     val toaster = LocalToaster.current
-    var instructionDraft by remember(state.instruction) { mutableStateOf(state.instruction) }
     var showRebuildConfirm by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
-    var pendingModelId by remember { mutableStateOf<kotlin.uuid.Uuid?>(null) }
 
     fun notify(text: String, type: ToastType = ToastType.Normal) = toaster.show(text, type)
 
     // 提示文案在 composable 作用域取好，确认框的回调里不能再调 stringResource
     val msgCleared = stringResource(R.string.setting_semantic_cleared)
-    val msgRebuildQueued = stringResource(R.string.setting_semantic_rebuild_queued)
-    val msgNeedModel = stringResource(R.string.setting_semantic_need_model)
-    val msgSaved = stringResource(R.string.setting_semantic_saved)
+    val msgRebuildStarted = stringResource(R.string.setting_semantic_rebuild_started, state.conversationCount)
     val msgRetryStarted = stringResource(R.string.setting_semantic_retry_started)
 
     RikkaConfirmDialog(
@@ -79,10 +68,7 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
         onConfirm = {
             showRebuildConfirm = false
             vm.rebuild()
-            notify(
-                "已开始重建，共 ${state.conversationCount} 个会话",
-                ToastType.Info,
-            )
+            notify(msgRebuildStarted, ToastType.Info)
         },
         onDismiss = { showRebuildConfirm = false },
     )
@@ -99,24 +85,6 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
             notify(msgCleared, ToastType.Success)
         },
         onDismiss = { showClearConfirm = false },
-    )
-
-    // 换模型等于换向量空间，会清库重算，先问一句
-    RikkaConfirmDialog(
-        show = pendingModelId != null,
-        title = stringResource(R.string.setting_semantic_switch_model),
-        text = { Text(stringResource(R.string.setting_semantic_switch_model_confirm)) },
-        confirmText = stringResource(R.string.setting_semantic_continue),
-        dismissText = stringResource(R.string.setting_semantic_cancel),
-        onConfirm = {
-            val id = pendingModelId
-            pendingModelId = null
-            if (id != null) {
-                vm.setModel(id)
-                notify(msgRebuildQueued, ToastType.Info)
-            }
-        },
-        onDismiss = { pendingModelId = null },
     )
 
     Scaffold(
@@ -140,91 +108,11 @@ fun SettingSemanticIndexPage(vm: SemanticIndexVM = koinViewModel()) {
                 CardGroup(title = { Text(stringResource(R.string.setting_semantic_switch_section)) }) {
                     switchItem(
                         checked = state.enabled,
-                        onCheckedChange = { enabled ->
-                            vm.setEnabled(enabled)
-                            if (enabled && state.modelId == null) {
-                                notify(
-                                    msgNeedModel,
-                                    ToastType.Warning,
-                                )
-                            }
-                        },
+                        onCheckedChange = { vm.setEnabled(it) },
                         headlineContent = { Text(stringResource(R.string.setting_semantic_enable)) },
                         supportingContent = {
                             Text(stringResource(R.string.setting_semantic_enable_desc))
                         },
-                    )
-                }
-            }
-
-            item {
-                CardGroup(title = { Text(stringResource(R.string.setting_semantic_model_section)) }) {
-                    if (models.isEmpty()) {
-                        item(
-                            headlineContent = { Text(stringResource(R.string.setting_semantic_no_model)) },
-                            supportingContent = {
-                                Text(stringResource(R.string.setting_semantic_no_model_desc))
-                            }
-                        )
-                    } else {
-                        models.forEach { (provider, model) ->
-                            val selected = state.modelId == model.id
-                            item(
-                                onClick = {
-                                    when {
-                                        selected -> Unit
-                                        // 有既往索引才需要确认，首次选择直接生效
-                                        state.chunkCount > 0 -> pendingModelId = model.id
-                                        else -> {
-                                            vm.setModel(model.id)
-                                            notify(msgRebuildQueued, ToastType.Info)
-                                        }
-                                    }
-                                },
-                                headlineContent = { Text(model.displayName.ifBlank { model.modelId }) },
-                                supportingContent = {
-                                    Text(
-                                        "${provider.name} · ${model.modelId}" +
-                                            if (selected) " · " + stringResource(R.string.setting_semantic_in_use) else ""
-                                    )
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
-                CardGroup(title = { Text(stringResource(R.string.setting_semantic_instruction_section)) }) {
-                    formItem(
-                        headlineContent = { Text(stringResource(R.string.setting_semantic_instruction)) },
-                        supportingContent = {
-                            Text(stringResource(R.string.setting_semantic_instruction_desc))
-                        },
-                        content = {
-                            OutlinedTextField(
-                                value = instructionDraft,
-                                onValueChange = { instructionDraft = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp),
-                                label = { Text("Instruct: ...") },
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                TextButton(
-                                    enabled = instructionDraft != state.instruction,
-                                    onClick = {
-                                        vm.setInstruction(instructionDraft)
-                                        notify(msgSaved, ToastType.Success)
-                                    },
-                                ) {
-                                    Text(stringResource(R.string.setting_semantic_save))
-                                }
-                            }
-                        }
                     )
                 }
             }

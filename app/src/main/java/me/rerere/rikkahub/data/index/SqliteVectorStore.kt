@@ -51,7 +51,6 @@ class SqliteVectorStore private constructor(
             writeMeta(META_PROFILE_DTYPE, profile.dtype)
             writeMeta(META_PROFILE_EXTRACT, profile.extractVersion.toString())
             writeMeta(META_PROFILE_CHUNK, profile.chunkVersion.toString())
-            writeMeta(META_PROFILE_INSTRUCTION, profile.instruction)
             database.setTransactionSuccessful()
         } finally {
             database.endTransaction()
@@ -358,7 +357,6 @@ class SqliteVectorStore private constructor(
             dtype = readMeta(META_PROFILE_DTYPE) ?: "int8",
             extractVersion = readMeta(META_PROFILE_EXTRACT)?.toIntOrNull() ?: IndexableText.EXTRACT_VERSION,
             chunkVersion = readMeta(META_PROFILE_CHUNK)?.toIntOrNull() ?: TextChunker.CHUNK_VERSION,
-            instruction = readMeta(META_PROFILE_INSTRUCTION) ?: "",
             quantScale = VectorQuantizer.scaleFor(dimension)
         )
     }
@@ -397,7 +395,6 @@ class SqliteVectorStore private constructor(
         private const val META_PROFILE_DTYPE = "profile_dtype"
         private const val META_PROFILE_EXTRACT = "profile_extract_version"
         private const val META_PROFILE_CHUNK = "profile_chunk_version"
-        private const val META_PROFILE_INSTRUCTION = "profile_instruction"
         private const val MAX_LIMIT = 500
 
         /**

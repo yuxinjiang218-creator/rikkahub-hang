@@ -14,6 +14,4 @@ data class EmbeddingIndexSetting(
     val enabled: Boolean = false,
     /** 只用 OpenAI 兼容 provider 里标了 EMBEDDING 的模型 */
     val modelId: Uuid? = null,
-    /** 查询侧指令前缀，文档侧不加；改了它等于换了向量空间，会触发重建 */
-    val instruction: String = "",
 )

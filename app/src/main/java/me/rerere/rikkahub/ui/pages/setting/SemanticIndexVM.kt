@@ -6,9 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelType
-import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.index.ConversationIndexer
@@ -22,7 +19,6 @@ import kotlin.uuid.Uuid
 data class SemanticIndexUiState(
     val enabled: Boolean = false,
     val modelId: Uuid? = null,
-    val instruction: String = "",
     val chunkCount: Int = 0,
     val conversationCount: Int = 0,
     val cacheSizeBytes: Long = 0L,
@@ -64,7 +60,6 @@ class SemanticIndexVM(
                 _state.value = _state.value.copy(
                     enabled = settings.embeddingIndex.enabled,
                     modelId = settings.embeddingIndex.modelId,
-                    instruction = settings.embeddingIndex.instruction,
                     ftsRebuilding = conversationRepository.ftsRebuildState.value.running,
                 )
             }
@@ -86,10 +81,6 @@ class SemanticIndexVM(
         refresh()
     }
 
-    fun embeddingModels(settings: Settings): List<Pair<ProviderSetting.OpenAI, Model>> =
-        settings.providers.filterIsInstance<ProviderSetting.OpenAI>()
-            .flatMap { provider -> provider.models.filter { it.type == ModelType.EMBEDDING }.map { provider to it } }
-
     fun setEnabled(enabled: Boolean) {
         viewModelScope.launch {
             settingsStore.update { it.copy(embeddingIndex = it.embeddingIndex.copy(enabled = enabled)) }
@@ -99,22 +90,6 @@ class SemanticIndexVM(
                 indexTaskScheduler.schedule(debounceSeconds = 0L)
             }
             refresh()
-        }
-    }
-
-    fun setModel(modelId: Uuid) {
-        viewModelScope.launch {
-            // 换模型等于换向量空间：清空重建，不做迁移
-            settingsStore.update { it.copy(embeddingIndex = it.embeddingIndex.copy(modelId = modelId)) }
-            conversationIndexer.rebuildAll()
-            indexTaskScheduler.schedule(debounceSeconds = 0L)
-            refresh()
-        }
-    }
-
-    fun setInstruction(instruction: String) {
-        viewModelScope.launch {
-            settingsStore.update { it.copy(embeddingIndex = it.embeddingIndex.copy(instruction = instruction)) }
         }
     }
 

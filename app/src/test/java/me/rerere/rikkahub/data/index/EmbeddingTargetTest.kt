@@ -147,6 +147,5 @@ class EmbeddingTargetTest {
         val default = EmbeddingIndexSetting()
         assertFalse(default.enabled)
         assertNull(default.modelId)
-        assertEquals("", default.instruction)
     }
 }

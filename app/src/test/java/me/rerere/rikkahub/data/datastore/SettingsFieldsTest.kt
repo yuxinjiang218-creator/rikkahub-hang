@@ -165,7 +165,7 @@ private val SAMPLE = Settings(
     webServerJwtEnabled = true,
     webServerAccessPassword = "secret",
     webServerLocalhostOnly = true,
-    embeddingIndex = EmbeddingIndexSetting(enabled = true, modelId = id(40), instruction = "instruct"),
+    embeddingIndex = EmbeddingIndexSetting(enabled = true, modelId = id(40)),
     backupReminderConfig = BackupReminderConfig(enabled = true),
     sponsorAlertDismissedAt = 7,
 )

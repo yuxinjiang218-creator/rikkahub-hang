@@ -1695,14 +1695,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_semantic_switch_section">开关</string>
   <string name="setting_semantic_enable">语义检索</string>
   <string name="setting_semantic_enable_desc">开启后，聊天正文会被发送到所选模型的服务商来生成向量；关闭时只用本地关键词搜索，不发出任何内容。</string>
-  <string name="setting_semantic_model_section">Embedding 模型</string>
-  <string name="setting_semantic_no_model">没有可用的向量模型</string>
-  <string name="setting_semantic_no_model_desc">请先在服务商里添加一个 OpenAI 兼容的 Embedding 模型（类型选 EMBEDDING）。</string>
-  <string name="setting_semantic_in_use">当前使用</string>
-  <string name="setting_semantic_instruction_section">查询指令</string>
-  <string name="setting_semantic_instruction">指令（可留空）</string>
-  <string name="setting_semantic_instruction_desc">只加在查询这一侧，不改已存的文档向量；改了它不需要重建索引。</string>
-  <string name="setting_semantic_save">保存</string>
   <string name="setting_semantic_status_section">索引状态</string>
   <string name="setting_semantic_indexed">已索引 %1$d 块 / %2$d 个会话</string>
   <string name="setting_semantic_cache_size">缓存占用 %s</string>
@@ -1721,14 +1713,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_semantic_clear">清理索引</string>
   <string name="setting_semantic_clear_desc">只删除本地向量缓存，不删除任何聊天记录</string>
   <string name="setting_semantic_clear_confirm">删除本地向量缓存？聊天记录不受影响，之后可以重新建立。</string>
-  <string name="setting_semantic_switch_model">更换模型</string>
-  <string name="setting_semantic_switch_model_confirm">换模型等于换向量空间，现有索引会被清空并重算，这会产生费用。</string>
-  <string name="setting_semantic_continue">继续</string>
   <string name="setting_semantic_cancel">取消</string>
   <string name="setting_semantic_cleared">已清理向量缓存</string>
-  <string name="setting_semantic_rebuild_queued">已加入重建队列</string>
-  <string name="setting_semantic_need_model">还没选向量模型，语义检索不会生效</string>
-  <string name="setting_semantic_saved">已保存</string>
   <string name="setting_semantic_retry_started">已开始处理待办会话</string>
   <string name="setting_semantic_entry_title">语义检索</string>
   <string name="setting_semantic_entry_desc">用向量在自己聊天记录里找内容，意思相近也能搜到；需要先选一个 embedding 模型</string>
@@ -1738,4 +1724,11 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
 
   <string name="search_index_building">正在建立索引 %1$d/%2$d 个会话…</string>
   <string name="search_index_building_simple">正在建立聊天记录索引…</string>
+  <string name="setting_model_page_embedding_model">向量模型</string>
+  <string name="setting_model_page_embedding_model_desc">用于聊天历史的语义检索，需为 OpenAI 兼容的 embedding 模型</string>
+  <string name="setting_semantic_rebuild_started">已开始重建，共 %d 个会话</string>
+  <string name="setting_model_page_embedding_switch_title">更换向量模型</string>
+  <string name="setting_model_page_embedding_switch_desc">换模型等于换向量空间：现有索引会作废，全部会话需要重新计算向量，这会产生费用。</string>
+  <string name="setting_model_page_embedding_switch_confirm">更换并重建</string>
+  <string name="setting_model_page_embedding_rebuild_queued">已更换模型，正在重建索引</string>
 </resources>

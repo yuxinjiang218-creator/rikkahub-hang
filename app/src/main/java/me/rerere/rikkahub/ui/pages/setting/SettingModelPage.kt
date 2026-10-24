@@ -29,9 +29,10 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.AiBrain01
 import me.rerere.hugeicons.stroke.AiEditing
+import me.rerere.hugeicons.stroke.AiSearch02
 import me.rerere.hugeicons.stroke.BubbleChat
-import me.rerere.hugeicons.stroke.ScanText
 import me.rerere.hugeicons.stroke.Package01
+import me.rerere.hugeicons.stroke.ScanText
 import me.rerere.hugeicons.stroke.Translate
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
@@ -48,7 +49,10 @@ import me.rerere.rikkahub.ui.components.ui.CardGroupScope
 import me.rerere.rikkahub.ui.components.ui.PagerTab
 import me.rerere.rikkahub.ui.components.ui.PagerTabs
 import me.rerere.rikkahub.ui.components.ui.switchItem
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.ui.components.RikkaConfirmDialog
+import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
 
 private enum class ModelSettingTab(
@@ -65,6 +69,10 @@ private enum class ModelSettingTab(
 @Composable
 fun SettingModelPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val pendingEmbeddingModel by vm.pendingEmbeddingModel.collectAsStateWithLifecycle()
+    val toaster = LocalToaster.current
+    // 确认框的回调不是 composable，文案先在这里取好
+    val embeddingRebuildQueuedMessage = stringResource(R.string.setting_model_page_embedding_rebuild_queued)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val pagerState = rememberPagerState { ModelSettingTab.entries.size }
 
@@ -150,6 +158,12 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
         modelId = settings.compressModelId,
         providers = settings.providers,
         type = ModelType.CHAT,
+    )
+    // 语义检索用的向量模型：按 EMBEDDING 类型筛，和上面几个默认模型同一套选择器
+    val embeddingModel = rememberModelListState(
+        modelId = settings.embeddingIndex.modelId,
+        providers = settings.providers,
+        type = ModelType.EMBEDDING,
     )
 
     LazyColumn(
@@ -251,9 +265,30 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                         },
                     )
                 }
+                modelItem(
+                    icon = HugeIcons.AiSearch02,
+                    title = R.string.setting_model_page_embedding_model,
+                    description = R.string.setting_model_page_embedding_model_desc,
+                    state = embeddingModel,
+                    iconContainerColor = containerColor,
+                    iconContentColor = contentColor,
+                )
             }
         }
     }
+
+    RikkaConfirmDialog(
+        show = pendingEmbeddingModel != null,
+        title = stringResource(R.string.setting_model_page_embedding_switch_title),
+        text = { Text(stringResource(R.string.setting_model_page_embedding_switch_desc)) },
+        confirmText = stringResource(R.string.setting_model_page_embedding_switch_confirm),
+        dismissText = stringResource(R.string.setting_semantic_cancel),
+        onConfirm = {
+            vm.confirmPendingEmbeddingModel()
+            toaster.show(embeddingRebuildQueuedMessage, ToastType.Info)
+        },
+        onDismiss = { vm.dismissPendingEmbeddingModel() },
+    )
 
     ModelListSheet(state = chatModel) {
         vm.updateSettings { latest -> latest.copy(chatModelId = it.id) }
@@ -269,6 +304,9 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
     }
     ModelListSheet(state = compressModel) {
         vm.updateSettings { latest -> latest.copy(compressModelId = it.id) }
+    }
+    ModelListSheet(state = embeddingModel) {
+        vm.onEmbeddingModelSelected(it.id)
     }
 }
 

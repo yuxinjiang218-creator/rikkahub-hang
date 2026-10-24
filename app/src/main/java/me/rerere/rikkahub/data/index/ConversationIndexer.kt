@@ -145,8 +145,7 @@ class ConversationIndexer(
         val profile = VectorProfile(
             provider = target.fingerprint,
             model = target.model.modelId,
-            dimension = dimension,
-            instruction = settings.embeddingIndex.instruction
+            dimension = dimension
         )
         // 先定 profile：profile 变了会清库，之后读到的签名才是当前的
         store.ensureProfile(profile)

@@ -750,11 +750,10 @@ class ConversationRepository(
         fetchLimit: Int,
         excludeConversationIds: Set<String>,
     ): RecallResult {
-        val instruction = settingsStore.awaitLoaded().embeddingIndex.instruction
-        val queryText = if (instruction.isBlank()) keyword else "$instruction\n$keyword"
+        val queryText = keyword
         // 缓存 key 必须带上端点指纹（端点 + 自定义 headers/body）而不只是模型 id：
         // 同一模型配不同参数就是不同空间，维度碰巧一样时不会报错，只会静默给出错结果
-        val cacheKey = "${target.fingerprint}|${instruction.hashCode()}|$queryText"
+        val cacheKey = "${target.fingerprint}|$queryText"
         val cached = queryEmbeddingCache[cacheKey]
         val embedding = cached ?: try {
             withTimeoutOrNull(QUERY_EMBEDDING_TIMEOUT_MS) {
@@ -788,8 +787,7 @@ class ConversationRepository(
         val expectedProfile = VectorProfile(
             provider = target.fingerprint,
             model = target.model.modelId,
-            dimension = embedding.size,
-            instruction = instruction
+            dimension = embedding.size
         )
         if (store.activeProfileId() != expectedProfile.id) {
             Log.i(TAG, "向量库 profile 与当前设置不一致，本次不做语义召回")

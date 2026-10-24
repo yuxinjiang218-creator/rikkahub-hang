@@ -14,12 +14,6 @@ class VectorProfileTest {
     private val base = VectorProfile(provider = "siliconflow", model = "Qwen/Qwen3-Embedding-0.6B", dimension = 1024)
 
     @Test
-    fun `查询指令不参与 profile id`() {
-        // 指令只影响查询侧编码，已存的文档向量没有变化，不该触发重建
-        assertEquals(base.id, base.copy(instruction = "Instruct: 检索历史对话").id)
-    }
-
-    @Test
     fun `换模型换维度换端点都要换 profile`() {
         assertNotEquals(base.id, base.copy(model = "other/model").id)
         assertNotEquals(base.id, base.copy(dimension = 512).id)
