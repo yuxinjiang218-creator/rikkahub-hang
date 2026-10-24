@@ -69,10 +69,6 @@ private enum class ModelSettingTab(
 @Composable
 fun SettingModelPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val pendingEmbeddingModel by vm.pendingEmbeddingModel.collectAsStateWithLifecycle()
-    val toaster = LocalToaster.current
-    // 确认框的回调不是 composable，文案先在这里取好
-    val embeddingRebuildQueuedMessage = stringResource(R.string.setting_model_page_embedding_rebuild_queued)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val pagerState = rememberPagerState { ModelSettingTab.entries.size }
 
@@ -134,6 +130,10 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 @Composable
 private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding: PaddingValues) {
     // CardGroup 里放不了弹窗，各项的选择状态先在这里建好，弹窗统一放在列表后面
+    val pendingEmbeddingModel by vm.pendingEmbeddingModel.collectAsStateWithLifecycle()
+    val toaster = LocalToaster.current
+    // 确认框的回调不是 composable，文案先在这里取好
+    val embeddingRebuildQueuedMessage = stringResource(R.string.setting_model_page_embedding_rebuild_queued)
     val chatModel = rememberModelListState(
         modelId = settings.chatModelId,
         providers = settings.providers,
