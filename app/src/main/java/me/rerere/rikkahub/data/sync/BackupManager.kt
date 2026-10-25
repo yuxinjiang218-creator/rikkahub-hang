@@ -65,14 +65,19 @@ class BackupManager(
                 if (includeFiles) {
                     for (folder in ATTACHMENT_FOLDERS) {
                         val directory = File(context.filesDir, folder)
-                        val files = if (folder in NESTED_ATTACHMENT_FOLDERS) directory.walkTopDown().asSequence()
-                        else directory.listFiles().orEmpty().asSequence()
+                        val files = if (folder in NESTED_ATTACHMENT_FOLDERS) {
+                            directory.walkTopDown().asSequence()
+                        } else {
+                            directory.listFiles().orEmpty().asSequence()
+                        }
                         for (file in files.filter { it.isFile }) {
                             currentCoroutineContext().ensureActive()
                             // A media result still being downloaded is incomplete and gets renamed when it finishes.
                             if (folder == FileFolders.MEDIA_CREATION &&
                                 file.name.endsWith(MediaCreationFiles.PARTIAL_SUFFIX)
-                            ) continue
+                            ) {
+                                continue
+                            }
                             val relative = file.relativeTo(directory).invariantSeparatorsPath
                             PendingRestore.resolveInside(directory, relative)
                             addFile(zip, file, "$folder/$relative")
@@ -112,10 +117,14 @@ class BackupManager(
                                 // 向量缓存跟着主库走：没选主库就没有对应的消息可索引，单独恢复它没有意义
                                 VectorBackup.ARCHIVE_DATABASE -> if (includeDatabase) {
                                     File(payload, VectorBackup.ARCHIVE_DATABASE)
-                                } else null
+                                } else {
+                                    null
+                                }
                                 else -> if (includeFiles && isAttachment(entry.name)) {
                                     PendingRestore.resolveInside(File(payload, "files"), entry.name)
-                                } else null
+                                } else {
+                                    null
+                                }
                             } ?: continue
                             require(seen.add(entry.name)) { "Duplicate backup entry: ${entry.name}" }
                             check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs()) {
@@ -150,7 +159,10 @@ class BackupManager(
                         val settings = json.decodeFromString<Settings>(migrated)
                         require(!settings.init) { "Backup contains uninitialized settings" }
                         // Persist the migrated value once, including generated IDs, for restart/retry consistency.
-                        PendingRestore.writeDurably(settingsFile, json.encodeSettings(settings, json.launchCountOf(migrated)))
+                        PendingRestore.writeDurably(
+                            settingsFile,
+                            json.encodeSettings(settings, json.launchCountOf(migrated))
+                        )
                     }
                     currentCoroutineContext().ensureActive()
                     restore.publish(staging)

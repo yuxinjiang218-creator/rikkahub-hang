@@ -135,8 +135,10 @@ internal class PendingRestore(
             path.startsWith("database/") -> {
                 val name = path.removePrefix("database/")
                 require(name in listOf(
-                    databaseFile.name, databaseFile.name + "-wal",
-                    databaseFile.name + "-shm", databaseFile.name + "-journal"
+                    databaseFile.name,
+                    databaseFile.name + "-wal",
+                    databaseFile.name + "-shm",
+                    databaseFile.name + "-journal"
                 )) {
                     "Invalid restore database path"
                 }
@@ -148,8 +150,10 @@ internal class PendingRestore(
             path.startsWith("vector/") -> {
                 val name = path.removePrefix("vector/")
                 require(name in listOf(
-                    vectorDatabaseFile.name, vectorDatabaseFile.name + "-wal",
-                    vectorDatabaseFile.name + "-shm", vectorDatabaseFile.name + "-journal"
+                    vectorDatabaseFile.name,
+                    vectorDatabaseFile.name + "-wal",
+                    vectorDatabaseFile.name + "-shm",
+                    vectorDatabaseFile.name + "-journal"
                 )) {
                     "Invalid restore vector path"
                 }
@@ -193,4 +197,6 @@ internal class PendingRestore(
 }
 
 /** Only thrown when original files are intact and the failed import has been isolated. */
-internal class RestoreFailedException(cause: Exception) : Exception("Backup restore failed; original files restored", cause)
+internal class RestoreFailedException(
+    cause: Exception
+) : Exception("Backup restore failed; original files restored", cause)

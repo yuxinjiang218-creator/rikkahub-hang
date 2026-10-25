@@ -42,8 +42,11 @@ class BackupManagerTest {
             override fun getFilesDir() = File(directory, "files").apply { mkdirs() }
             override fun getCacheDir() = File(directory, "cache").apply { mkdirs() }
             override fun getNoBackupFilesDir() = File(directory, "no-backup").apply { mkdirs() }
-            override fun getDatabasePath(name: String): File = if (File(name).isAbsolute) File(name)
-                else File(directory, "databases/$name").also { it.parentFile!!.mkdirs() }
+            override fun getDatabasePath(name: String): File = if (File(name).isAbsolute) {
+                File(name)
+            } else {
+                File(directory, "databases/$name").also { it.parentFile!!.mkdirs() }
+            }
         }
         liveDatabase = AppDatabaseFactory.create(context)
         liveDatabase.openHelper.writableDatabase.execSQL("CREATE TABLE backup_probe (text TEXT)")
@@ -117,7 +120,11 @@ class BackupManagerTest {
         val archive = File(directory, "no-launch-count.zip")
         ZipOutputStream(archive.outputStream()).use { zip ->
             zip.putNextEntry(ZipEntry("settings.json"))
-            zip.write(JsonObject(JsonInstant.parseToJsonElement(settingsJson).jsonObject - "launchCount").toString().toByteArray())
+            zip.write(
+                JsonObject(
+                    JsonInstant.parseToJsonElement(settingsJson).jsonObject - "launchCount"
+                ).toString().toByteArray()
+            )
             zip.closeEntry()
         }
         manager.stageRestore(archive, includeDatabase = false, includeFiles = false)
@@ -171,7 +178,10 @@ class BackupManagerTest {
     }
 
     private fun probe(database: AppDatabase): String = database.openHelper.readableDatabase
-        .query("SELECT text FROM backup_probe").use { check(it.moveToFirst()); it.getString(0) }
+        .query("SELECT text FROM backup_probe").use {
+            check(it.moveToFirst())
+            it.getString(0)
+        }
 
     @Test fun vectorCacheRidesAlongWithTheDatabaseAndSurvivesRestore() = runBlocking {
         // 造一份假的向量缓存：只要能确认它被原样搬进备份、又原样搬回来就够
