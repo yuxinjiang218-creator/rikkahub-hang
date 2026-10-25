@@ -172,10 +172,12 @@ class SqliteVectorStoreTest {
     @Test
     fun dimensionMismatchIsRejected() {
         val wrong = unitVector(Random(19), dim = 32)
+        // 写：传进来的块本身不合规，算参数错
         assertThrows(IllegalArgumentException::class.java) {
             store.upsert(listOf(record("bad", wrong)))
         }
-        assertThrows(IllegalArgumentException::class.java) {
+        // 查：参数没毛病，是这份索引和查询不在同一个向量空间，算状态错
+        assertThrows(IllegalStateException::class.java) {
             store.search(wrong, limit = 5)
         }
     }
