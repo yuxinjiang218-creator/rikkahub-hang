@@ -64,7 +64,14 @@ class ChatToolFactory(
             }
             addAll(localTools.getTools(assistant.localTools))
             if (assistant.enableRecentChatsReference) {
-                addAll(createConversationTools(conversationRepository, assistant.id, currentConversationId, historyMessages))
+                addAll(
+                    createConversationTools(
+                        conversationRepository,
+                        assistant.id,
+                        currentConversationId,
+                        historyMessages
+                    )
+                )
             }
             addAll(workspaceTools)
             if (assistant.enabledSkills.isNotEmpty()) {

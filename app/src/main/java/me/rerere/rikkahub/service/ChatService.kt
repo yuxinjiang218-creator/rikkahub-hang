@@ -36,6 +36,8 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.checkpointContext
 import me.rerere.ai.ui.isEmptyInputMessage
+import me.rerere.ai.ui.limitContext
+import me.rerere.ai.ui.takeLastContextMessages
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
@@ -79,8 +81,6 @@ import me.rerere.rikkahub.data.model.withToolApproval
 import me.rerere.rikkahub.data.model.withTranslation
 import me.rerere.rikkahub.data.model.withoutConversationFields
 import me.rerere.rikkahub.data.model.withoutUnresumableToolCalls
-import me.rerere.ai.ui.limitContext
-import me.rerere.ai.ui.takeLastContextMessages
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.web.BadRequestException
@@ -948,7 +948,9 @@ class ChatService(
             val sourceMessages = if (hasStoredSourceBoundary) {
                 checkpoint.contextCheckpointSourceMessageIds.map { id ->
                     messagesById[id]
-                        ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
+                        ?: throw IllegalStateException(
+                            context.getString(R.string.chat_page_compress_conversation_changed)
+                        )
                 }
             } else {
                 effectiveMessagesBeforeCheckpoint.filterNot { it.id in retainedMessageIds }

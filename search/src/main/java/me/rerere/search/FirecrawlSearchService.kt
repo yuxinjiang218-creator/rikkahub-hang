@@ -248,6 +248,3 @@ data class FirecrawlSearchResultData(
     val web: List<FirecrawlSearchResultWebItem>? = emptyList(),
     val news: List<FirecrawlSearchResultNewsItem>? = emptyList(),
 )
-
-
-
