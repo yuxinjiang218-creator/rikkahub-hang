@@ -177,7 +177,9 @@ class SqliteVectorStore private constructor(
     ): List<VectorHit> = synchronized(lock) {
         checkOpen()
         val active = requireProfile()
-        require(embedding.size == active.dimension) {
+        // 用 check 而不是 require：维度不符是「这个查询不该在这份索引上执行」的状态错误，
+        // 传进来的参数本身没有错，报 IllegalArgumentException 会误导调用方去改参数
+        check(embedding.size == active.dimension) {
             "维度不匹配：profile=${active.dimension}, 查询=${embedding.size}"
         }
         if (filter.assistantIds != null && filter.assistantIds.isEmpty()) return@synchronized emptyList<VectorHit>()
