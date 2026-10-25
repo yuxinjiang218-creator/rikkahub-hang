@@ -91,15 +91,6 @@ interface SearchService<T : SearchServiceOptions> {
             keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
         }
 
-        /**
- * 按逗号/空格分隔的多把 key 轮询取一把。
- *
- * 各家搜索服务的 key 字段都允许填多把，这里统一走同一套轮询，
- * 免得某个 provider 直接把整串 "k1,k2" 当 header 发出去被拒。
- */
-internal fun nextSearchApiKey(keys: String, serviceId: Uuid): String =
-    SearchService.keyRoulette.next(keys, serviceId.toString())
-
 internal val json by lazy {
             Json {
                 ignoreUnknownKeys = true
@@ -108,6 +99,15 @@ internal val json by lazy {
         }
     }
 }
+
+/**
+ * 按逗号/空格分隔的多把 key 轮询取一把。
+ *
+ * 各家搜索服务的 key 字段都允许填多把，这里统一走同一套轮询，
+ * 免得某个 provider 直接把整串 "k1,k2" 当 header 发出去被拒。
+ */
+internal fun nextSearchApiKey(keys: String, serviceId: Uuid): String =
+    SearchService.keyRoulette.next(keys, serviceId.toString())
 
 @Serializable
 data class SearchCommonOptions(
