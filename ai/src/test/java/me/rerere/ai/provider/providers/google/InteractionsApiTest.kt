@@ -413,6 +413,9 @@ class InteractionsApiTest {
         }
 
         assertEquals("Deadline expired before operation could complete.", error.message)
+        // gateway_timeout 是网关超时，属于临时故障
+        assertEquals("gateway_timeout", error.type)
+        assertTrue("网关超时应该重试", error.retryable)
         assertTrue(decoder.onClosed().isEmpty())
     }
 

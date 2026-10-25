@@ -38,6 +38,7 @@ import me.rerere.ai.ui.checkpointContext
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.takeLastContextMessages
+import me.rerere.ai.util.HttpException
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
@@ -730,10 +731,15 @@ class ChatService(
     }
 
     private fun retryStatus(attempt: RetryAttempt): String {
-        val reason = when (attempt.cause) {
+        val reason = when (val cause = attempt.cause) {
             is UnknownHostException -> R.string.chat_generation_network_unknown_host
             is SocketTimeoutException -> R.string.chat_generation_network_timeout
             is ConnectException, is NoRouteToHostException -> R.string.chat_generation_network_unreachable
+            // 限流和服务端故障不是网络问题，说成"网络断开"会让人去查 WiFi
+            is HttpException -> when {
+                cause.code == 429 -> R.string.chat_generation_network_rate_limited
+                else -> R.string.chat_generation_network_server_busy
+            }
             else -> R.string.chat_generation_network_disconnected
         }
         return context.getString(

@@ -23,6 +23,7 @@ import me.rerere.ai.util.json
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -94,6 +95,10 @@ class ResponseApiStreamDecoderTest {
         }
 
         assertEquals("Upstream generation failed", exception.message)
+        // 流式错误事件没有数字状态码，只能靠 code 字段判断；server_error 属于临时故障，应该允许重试
+        assertNull(exception.code)
+        assertEquals("server_error", exception.type)
+        assertTrue("服务端临时故障应该重试", exception.retryable)
         assertTrue(decoder.onClosed().isEmpty())
     }
 

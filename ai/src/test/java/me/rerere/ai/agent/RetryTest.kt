@@ -6,11 +6,13 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import me.rerere.ai.util.HttpException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.seconds
 
 class RetryTest {
@@ -77,6 +79,63 @@ class RetryTest {
         job.join()
 
         assertTrue(job.isCancelled)
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `rate limit and server errors are retried`() = runTest {
+        listOf(408, 429, 500, 502, 503, 504).forEach { code ->
+            var calls = 0
+            val result = withRetry(RetryPolicy(maxRetries = 2, initialDelay = ZERO)) {
+                calls++
+                if (calls == 1) throw HttpException("boom", code = code)
+                "ok"
+            }
+            assertEquals("code=$code 应该重试", "ok", result)
+            assertEquals("code=$code", 2, calls)
+        }
+    }
+
+    @Test
+    fun `client errors are not retried`() = runTest {
+        // 这几个重发结果不会变，重试只是让用户白等
+        listOf(400, 401, 403, 404, 422).forEach { code ->
+            var calls = 0
+            val error = runCatching {
+                withRetry(RetryPolicy(maxRetries = 3, initialDelay = ZERO)) {
+                    calls++
+                    throw HttpException("boom", code = code)
+                }
+            }.exceptionOrNull()
+            assertTrue("code=$code", error is HttpException)
+            assertEquals("code=$code 不该重试", 1, calls)
+        }
+    }
+
+    @Test
+    fun `errors without a status code fall back to the error type`() = runTest {
+        // 流式响应的错误事件通常没有数字状态码，只有类型字符串
+        var calls = 0
+        val result = withRetry(RetryPolicy(maxRetries = 2, initialDelay = ZERO)) {
+            calls++
+            if (calls == 1) throw HttpException("upstream busy", type = "rate_limit_error")
+            "ok"
+        }
+        assertEquals("ok", result)
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `unknown errors are never retried`() = runTest {
+        // 未知错误里混着余额不足、key 失效、内容被拒，乱重试没用还可能被记成滥用
+        var calls = 0
+        val error = runCatching {
+            withRetry(RetryPolicy(maxRetries = 3, initialDelay = ZERO)) {
+                calls++
+                throw HttpException("quota exceeded", type = "insufficient_quota")
+            }
+        }.exceptionOrNull()
+        assertTrue(error is HttpException)
         assertEquals(1, calls)
     }
 }

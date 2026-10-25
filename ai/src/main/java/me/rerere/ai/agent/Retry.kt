@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import me.rerere.ai.util.HttpException
 import java.io.IOException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -11,12 +12,17 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * 请求模型失败时的重试策略：最多重试 [maxRetries] 次，等待时间从 [initialDelay] 开始每次翻倍。
  *
- * 默认只重试 [IOException]，也就是连不上、超时、读到一半断开这类网络故障。
+ * 默认重试两类：
+ * - [IOException]：连不上、超时、读到一半断开这类网络故障；
+ * - [HttpException.retryable]：429 限流和 5xx 服务端抖动。这类以前被漏掉了，
+ *   因为状态码被拼进了 message 字符串，重试层根本看不到。
+ *
+ * 鉴权错、参数错、内容过滤这些重发结果不会变，重试只会让用户白等。
  */
 data class RetryPolicy(
     val maxRetries: Int,
     val initialDelay: Duration = 1.seconds,
-    val retryOn: (Throwable) -> Boolean = { it is IOException },
+    val retryOn: (Throwable) -> Boolean = { it.isRetryableFailure() },
 ) {
     companion object {
         val NONE = RetryPolicy(maxRetries = 0)
@@ -24,6 +30,13 @@ data class RetryPolicy(
         /** 网络自动重试：最多 3 次，间隔 1s、2s、4s */
         val NETWORK = RetryPolicy(maxRetries = 3)
     }
+}
+
+/** 这个异常重发一次有没有可能变好 */
+internal fun Throwable.isRetryableFailure(): Boolean = when (this) {
+    is IOException -> true
+    is HttpException -> retryable
+    else -> false
 }
 
 /** 第 [retry] 次重试（共 [maxRetries] 次）将在 [delay] 后开始，[cause] 是上一次失败的原因 */
