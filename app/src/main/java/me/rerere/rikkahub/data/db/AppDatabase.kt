@@ -58,7 +58,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         UsageRecordEntity::class,
         ConversationIndexTaskEntity::class,
     ],
-    version = 33,
+    version = 34,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -83,6 +83,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 26, to = 27),
         AutoMigration(from = 28, to = 29, spec = Migration_28_29::class),
         AutoMigration(from = 29, to = 30),
+        AutoMigration(from = 31, to = 32),
         AutoMigration(from = 32, to = 33),
     ]
 )

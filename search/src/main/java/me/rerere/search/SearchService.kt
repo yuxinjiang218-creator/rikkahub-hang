@@ -17,7 +17,14 @@ import okhttp3.internal.closeQuietly
 import okio.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
+import kotlin.reflect.KClass
 import kotlin.uuid.Uuid
+
+internal const val SEARCH_QUERY_DESCRIPTION =
+    "Concise search keywords, not a full sentence. Write them in the language the best sources on the topic " +
+        "are written in: usually English for technology, science and international topics; the local language " +
+        "for region-specific topics such as local news, policies, communities or products. " +
+        "Keep proper nouns, product names and error messages verbatim."
 
 interface SearchService<T : SearchServiceOptions> {
     val name: String
@@ -84,7 +91,16 @@ interface SearchService<T : SearchServiceOptions> {
             keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
         }
 
-        internal val json by lazy {
+        /**
+ * 按逗号/空格分隔的多把 key 轮询取一把。
+ *
+ * 各家搜索服务的 key 字段都允许填多把，这里统一走同一套轮询，
+ * 免得某个 provider 直接把整串 "k1,k2" 当 header 发出去被拒。
+ */
+internal fun nextSearchApiKey(keys: String, serviceId: Uuid): String =
+    SearchService.keyRoulette.next(keys, serviceId.toString())
+
+internal val json by lazy {
             Json {
                 ignoreUnknownKeys = true
                 explicitNulls = false
@@ -172,6 +188,30 @@ sealed class SearchServiceOptions {
             DeepSeekOptions::class to "DeepSeek",
             CustomJsOptions::class to "Custom JS",
         )
+
+        /** 新建各类型的默认配置，避免依赖 kotlin-reflect 调用构造函数 */
+        val FACTORIES: Map<KClass<out SearchServiceOptions>, () -> SearchServiceOptions> = mapOf(
+            BingLocalOptions::class to { BingLocalOptions() },
+            RikkaHubOptions::class to { RikkaHubOptions() },
+            ZhipuOptions::class to { ZhipuOptions() },
+            DoubaoOptions::class to { DoubaoOptions() },
+            TavilyOptions::class to { TavilyOptions() },
+            ExaOptions::class to { ExaOptions() },
+            SearXNGOptions::class to { SearXNGOptions() },
+            LinkUpOptions::class to { LinkUpOptions() },
+            BraveOptions::class to { BraveOptions() },
+            MetasoOptions::class to { MetasoOptions() },
+            OllamaOptions::class to { OllamaOptions() },
+            PerplexityOptions::class to { PerplexityOptions() },
+            FirecrawlOptions::class to { FirecrawlOptions() },
+            JinaOptions::class to { JinaOptions() },
+            BochaOptions::class to { BochaOptions() },
+            GrokOptions::class to { GrokOptions() },
+            TinyfishOptions::class to { TinyfishOptions() },
+            SerperOptions::class to { SerperOptions() },
+            DeepSeekOptions::class to { DeepSeekOptions() },
+            CustomJsOptions::class to { CustomJsOptions() },
+        )
     }
 
     @Serializable
@@ -201,6 +241,7 @@ sealed class SearchServiceOptions {
         override val id: Uuid = Uuid.random(),
         val apiKey: String = "",
         val depth: String = "advanced",
+        val includeAnswer: Boolean = true,
     ) : SearchServiceOptions()
 
     @Serializable

@@ -45,7 +45,7 @@ object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOp
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -83,10 +83,11 @@ object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOp
 
             Log.i(TAG, "search: $body")
 
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url(PERPLEXITY_ENDPOINT)
                 .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .build()
 

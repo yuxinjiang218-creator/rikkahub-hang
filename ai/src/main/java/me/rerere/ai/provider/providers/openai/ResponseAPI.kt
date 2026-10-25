@@ -83,6 +83,8 @@ private const val TAG = "ResponseAPI"
 internal class ResponsesEndpoint(
     val url: String,
     val capabilities: ResponseProviderCapabilities = ResponseProviderCapabilities(),
+    // 是否把历史里的思考发回去；账号型提供商自己签发、自己认，默认发
+    val includeHistoryReasoning: Boolean = true,
     // 构建请求时调用，负责请求头和鉴权；可挂起，以便先刷新 token
     val configureRequest: suspend Request.Builder.() -> Unit,
 )
@@ -106,6 +108,7 @@ class ResponseAPI(
     private fun ProviderSetting.OpenAI.toResponsesEndpoint(params: TextGenerationParams) = ResponsesEndpoint(
         url = "$baseUrl$responsesPath",
         capabilities = resolveResponseProviderCapabilities(baseUrl.toHttpUrl().host),
+        includeHistoryReasoning = includeHistoryReasoning,
         configureRequest = {
             headers(mergeCustomHeaders(params.customHeaders))
             addHeader("Authorization", "Bearer ${keyRoulette.next(apiKey, id.toString())}")
@@ -124,6 +127,7 @@ class ResponseAPI(
             messages = messages,
             params = params,
             stream = false,
+            includeHistoryReasoning = endpoint.includeHistoryReasoning,
         )
         val request = Request.Builder()
             .url(endpoint.url)
@@ -157,6 +161,7 @@ class ResponseAPI(
             messages = messages,
             params = params,
             stream = true,
+            includeHistoryReasoning = endpoint.includeHistoryReasoning,
         )
         val request = Request.Builder()
             .url(endpoint.url)
@@ -234,7 +239,8 @@ class ResponseAPI(
         capabilities: ResponseProviderCapabilities,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-        stream: Boolean
+        stream: Boolean,
+        includeHistoryReasoning: Boolean = true,
     ): JsonObject {
         return buildJsonObject {
             put("model", params.model.modelId)
@@ -263,7 +269,7 @@ class ResponseAPI(
                         put("content", systemPrompt)
                     })
                 }
-                buildMessages(messages).forEach { add(it) }
+                buildMessages(messages, includeHistoryReasoning).forEach { add(it) }
             }
 
             // reasoning
@@ -335,26 +341,33 @@ class ResponseAPI(
         }.mergeCustomBody(params.customBody)
     }
 
-    internal fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
+    internal fun buildMessages(
+        messages: List<UIMessage>,
+        includeHistoryReasoning: Boolean = true,
+    ) = buildJsonArray {
         messages
             .filter { message ->
                 message.role != MessageRole.SYSTEM && (
                     message.isValidToUpload() || message.parts.any { part ->
-                        part is UIMessagePart.Reasoning &&
+                        includeHistoryReasoning &&
+                            part is UIMessagePart.Reasoning &&
                             part.metadataAs<OpenAIReasoningMetadata>()?.encryptedContent != null
                     }
                     )
             }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantItems(message)
+                    addAssistantItems(message, includeHistoryReasoning)
                 } else {
                     addUserItems(message)
                 }
             }
     }
 
-    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage) {
+    private fun JsonArrayBuilder.addAssistantItems(
+        message: UIMessage,
+        includeHistoryReasoning: Boolean,
+    ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
 
@@ -365,9 +378,19 @@ class ResponseAPI(
                     group.parts.forEach { part ->
                         when (part) {
                             is UIMessagePart.Reasoning -> {
+                                if (!includeHistoryReasoning) return@forEach
                                 val reasoningMetadata = part.metadataAs<OpenAIReasoningMetadata>()
                                 val reasoningId = reasoningMetadata?.reasoningId
-                                if (reasoningId != null && !emittedReasoningIds.add(reasoningId)) {
+                                // 没有本家签发的 id 就是别的厂商/别的接口留下的思考：
+                                // Responses 只认自己产出过的 reasoning 条目，硬发会 400。
+                                // 这里降级成普通 assistant 正文，信息不丢，纯思考的消息也不会整条消失
+                                if (reasoningId == null) {
+                                    if (part.reasoning.isNotEmpty()) {
+                                        contentBuffer.add(UIMessagePart.Text(part.reasoning))
+                                    }
+                                    return@forEach
+                                }
+                                if (!emittedReasoningIds.add(reasoningId)) {
                                     return@forEach
                                 }
                                 // 先输出累积的文本/图片内容
@@ -376,16 +399,12 @@ class ResponseAPI(
                                     contentBuffer.clear()
                                 }
                                 // 输出 reasoning item
-                                val reasoningParts = if (reasoningId == null) {
-                                    listOf(part)
-                                } else {
-                                    group.parts.filterIsInstance<UIMessagePart.Reasoning>().filter {
-                                        it.metadataAs<OpenAIReasoningMetadata>()?.reasoningId == reasoningId
-                                    }
+                                val reasoningParts = group.parts.filterIsInstance<UIMessagePart.Reasoning>().filter {
+                                    it.metadataAs<OpenAIReasoningMetadata>()?.reasoningId == reasoningId
                                 }
                                 add(buildJsonObject {
                                     put("type", "reasoning")
-                                    reasoningId?.let { put("id", it) }
+                                    put("id", reasoningId)
                                     put("summary", buildJsonArray {
                                         reasoningParts
                                             .filter { it.reasoningType == ReasoningType.SUMMARY_TEXT }
@@ -397,7 +416,7 @@ class ResponseAPI(
                                                 })
                                             }
                                     })
-                                    val encryptedContent = reasoningMetadata?.encryptedContent
+                                    val encryptedContent = reasoningMetadata.encryptedContent
                                     val content = reasoningParts
                                         .filter { it.reasoningType == ReasoningType.REASONING_TEXT }
                                         .filter { it.reasoning.isNotEmpty() }

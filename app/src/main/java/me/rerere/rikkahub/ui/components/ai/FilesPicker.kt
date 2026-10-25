@@ -91,11 +91,20 @@ import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
 
+// 顺序决定切换方向：往后是进入下一级，往前是返回
 private enum class FilesPickerPage {
     MAIN,
     MCP,
     EXTENSIONS,
+    SEARCH,
+    SEARCH_PROVIDER,
 }
+
+private val FilesPickerPage.parent: FilesPickerPage
+    get() = when (this) {
+        FilesPickerPage.SEARCH_PROVIDER -> FilesPickerPage.SEARCH
+        else -> FilesPickerPage.MAIN
+    }
 
 @Composable
 internal fun FilesPicker(
@@ -110,6 +119,8 @@ internal fun FilesPicker(
     onScrollToLatestCompression: () -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateWorkspaceCwd: (String?) -> Unit,
+    onUpdateSearchMode: (SearchMode) -> Unit,
+    onUpdateSearchService: (Int) -> Unit,
     showCompressDialog: Boolean,
     onShowCompressDialogChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -135,14 +146,14 @@ internal fun FilesPicker(
     var showClearSearchResultsDialog by remember { mutableStateOf(false) }
 
     var page by remember { mutableStateOf(FilesPickerPage.MAIN) }
-    // 在子页面时，返回键回到主页面而不是关闭 sheet
+    // 在子页面时，返回键回到上一级而不是关闭 sheet
     BackHandler(enabled = page != FilesPickerPage.MAIN) {
-        page = FilesPickerPage.MAIN
+        page = page.parent
     }
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            if (targetState != FilesPickerPage.MAIN) {
+            if (targetState > initialState) {
                 slideInHorizontally { it } + fadeIn() togetherWith
                     slideOutHorizontally { -it } + fadeOut()
             } else {
@@ -167,6 +178,25 @@ internal fun FilesPicker(
                 onUpdateAssistant = onUpdateAssistant,
                 onBack = { page = FilesPickerPage.MAIN },
                 onDismissAll = onDismiss,
+            )
+
+            FilesPickerPage.SEARCH -> SearchPickerPage(
+                enableSearch = assistant.enableWebSearch,
+                settings = settings,
+                model = chatModel,
+                onUpdateSearchMode = onUpdateSearchMode,
+                onSelectProvider = { page = FilesPickerPage.SEARCH_PROVIDER },
+                onBack = { page = FilesPickerPage.MAIN },
+                onDismissAll = onDismiss,
+            )
+
+            FilesPickerPage.SEARCH_PROVIDER -> SearchProviderPicker(
+                settings = settings,
+                onUpdateSearchService = { index ->
+                    onUpdateSearchService(index)
+                    page = FilesPickerPage.SEARCH
+                },
+                onBack = { page = FilesPickerPage.SEARCH },
             )
 
             FilesPickerPage.MAIN -> Column(
@@ -202,6 +232,14 @@ internal fun FilesPicker(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                 ) {
+                    SearchPickerListItem(
+                        enableSearch = assistant.enableWebSearch,
+                        settings = settings,
+                        model = chatModel,
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        onClick = { page = FilesPickerPage.SEARCH },
+                    )
+
                     if (showWorkspace) {
                         WorkspacePickerListItem(
                             assistant = assistant,
@@ -238,7 +276,7 @@ internal fun FilesPicker(
                                 },
                             ) {
                                 Text(
-                                    text = conversation.workspaceCwd ?: "/workspace",
+                                    text = conversation.workspaceCwd ?: boundWorkspace?.workspaceDir().orEmpty(),
                                     // 路径的末尾更有辨识度，放不下时省略开头
                                     maxLines = 1,
                                     overflow = TextOverflow.StartEllipsis,
@@ -354,6 +392,7 @@ internal fun FilesPicker(
     if (showCwdSheet && boundWorkspace != null) {
         WorkspaceCwdPickerSheet(
             workspaceId = boundWorkspace.id,
+            workspaceDir = boundWorkspace.workspaceDir(),
             currentCwd = conversation.workspaceCwd,
             onSelectCwd = { newCwd ->
                 onUpdateWorkspaceCwd(newCwd)
@@ -438,7 +477,7 @@ private fun WorkspacePickerListItem(
                             contentDescription = stringResource(R.string.workspace_detail),
                         )
                     }
-                    if (boundWorkspace.shellStatus != WorkspaceShellStatus.DISABLED.name) {
+                    if (boundWorkspace.supportsTerminal()) {
                         IconButton(onClick = { onNavigateToTerminal(boundWorkspace.id) }) {
                             Icon(
                                 imageVector = HugeIcons.ComputerTerminal01,

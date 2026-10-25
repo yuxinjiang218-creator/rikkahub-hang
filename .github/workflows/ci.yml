@@ -61,7 +61,7 @@ jobs:
       - name: 单元测试（app 模块）
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest --stacktrace
+          ./gradlew :app:testGithubDebugUnitTest --stacktrace
 
       # Room 的 schema 是提交进仓库的；构建时才生成，所以让 CI 顺手补上，
       # 免得每次改表结构都得在本地跑一遍编译。

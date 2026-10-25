@@ -40,7 +40,7 @@ object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -63,10 +63,11 @@ object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
                 put("includeSummary", JsonPrimitive(false))
             }
 
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url("https://metaso.cn/api/v1/search")
                 .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Accept", "application/json")
                 .addHeader("Content-Type", "application/json")
                 .build()

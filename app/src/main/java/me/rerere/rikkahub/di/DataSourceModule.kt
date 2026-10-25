@@ -34,6 +34,7 @@ import me.rerere.rikkahub.data.index.EmbeddingClient
 import me.rerere.rikkahub.data.index.IndexStatusTracker
 import me.rerere.rikkahub.data.index.IndexTaskScheduler
 import me.rerere.rikkahub.data.index.VectorIndexProvider
+import me.rerere.rikkahub.data.remote.ModelsDevUpdater
 import me.rerere.rikkahub.data.remote.RemoteFileStore
 import me.rerere.rikkahub.data.remote.RikkaHubAPI
 import me.rerere.rikkahub.data.remote.SettingsProxyAuthenticator
@@ -269,6 +270,10 @@ val dataSourceModule = module {
 
     single {
         SponsorAPI.create(get())
+    }
+
+    single {
+        ModelsDevUpdater(context = get(), client = get())
     }
 
     single {

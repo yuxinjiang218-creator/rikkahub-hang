@@ -92,13 +92,13 @@ jobs:
       - name: 构建 Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --stacktrace
+          ./gradlew :app:assembleGithubDebug --stacktrace
 
       - name: 检查 APK 内原生库页对齐
         run: |
           set -euo pipefail
           # 16KB 页设备要求每个 LOAD 段 p_align == 0x4000，未对齐的 .so 会直接加载失败
-          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          APK=$(ls app/build/outputs/apk/github/debug/*.apk | head -1)
           echo "检查 $APK"
           rm -rf /tmp/so-check && mkdir -p /tmp/so-check
           unzip -o -q "$APK" 'lib/*/*.so' -d /tmp/so-check
@@ -132,7 +132,7 @@ jobs:
           # 16KB 页镜像需要较新的系统镜像与较新的模拟器
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest,me.rerere.rikkahub.data.index.ConversationIndexTaskTest --stacktrace
+          script: chmod +x gradlew && ./gradlew :app:connectedGithubDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest,me.rerere.rikkahub.data.index.ConversationIndexTaskTest --stacktrace
 
       - name: 上传测试报告
         if: always()

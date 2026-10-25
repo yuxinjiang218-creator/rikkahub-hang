@@ -31,7 +31,7 @@ object RikkaHubSearchService : SearchService<SearchServiceOptions.RikkaHubOption
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -54,10 +54,11 @@ object RikkaHubSearchService : SearchService<SearchServiceOptions.RikkaHubOption
                 put("includeImages", JsonPrimitive("false"))
             }
 
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url("https://api.rikka-ai.com/v1/search")
                 .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .build()
 

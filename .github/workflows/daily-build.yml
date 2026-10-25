@@ -99,7 +99,7 @@ jobs:
         if: ${{ inputs.debug_only != true }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleGithubRelease
 
       - name: Upload generated Room schema
         if: ${{ success() && inputs.debug_only != true }}
@@ -113,13 +113,13 @@ jobs:
         if: ${{ inputs.debug_only == true }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleGithubDebug
 
       - name: Gradle Debug Unit Tests
         if: ${{ inputs.debug_only == true }}
         run: |
           chmod +x gradlew
-          ./gradlew :ai:testDebugUnitTest :app:testDebugUnitTest
+          ./gradlew :ai:testDebugUnitTest :app:testGithubDebugUnitTest
 
       # 把 APK 直接发布为 Prerelease，用户点链接即可下载单个 apk，无需登录、无需解压
       - name: Publish nightly prerelease
@@ -133,12 +133,16 @@ jobs:
             自动每日构建（commit `${{ github.sha }}`）
 
             > ⚠️ 开发版本，可能不稳定，仅供测试。
-          files: app/build/outputs/apk/release/*.apk
+          # mapping.txt 用于还原混淆后的崩溃堆栈，所有 ABI 的 APK 共用这一份
+          files: |
+            app/build/outputs/apk/github/release/*.apk
+            app/build/outputs/mapping/githubRelease/mapping.txt
 
+      # debug_only 只出调试包，不做发布
       - name: Upload debug APKs
         if: ${{ success() && inputs.debug_only == true }}
         uses: actions/upload-artifact@v4
         with:
           name: rikkahub-debug-apks
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/github/debug/*.apk
           if-no-files-found: error

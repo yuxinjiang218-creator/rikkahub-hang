@@ -92,10 +92,11 @@ object GrokSearchService : SearchService<SearchServiceOptions.GrokOptions> {
 
             Log.i(TAG, "search: $query")
 
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url(serviceOptions.customUrl)
                 .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .build()
 

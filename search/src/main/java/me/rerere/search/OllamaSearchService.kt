@@ -38,7 +38,7 @@ object OllamaSearchService : SearchService<SearchServiceOptions.OllamaOptions> {
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -68,10 +68,11 @@ object OllamaSearchService : SearchService<SearchServiceOptions.OllamaOptions> {
                 put("max_results", commonOptions.resultSize.coerceIn(5..10))
             }
 
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url("https://ollama.com/api/web_search")
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .build()
 
             val response = httpClient.newCall(request).await()
@@ -108,10 +109,11 @@ object OllamaSearchService : SearchService<SearchServiceOptions.OllamaOptions> {
                 put("url", url)
             }
 
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url("https://ollama.com/api/web_fetch")
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
+                .addHeader("Authorization", "Bearer $apiKey")
                 .build()
 
             val response = httpClient.newCall(request).await()

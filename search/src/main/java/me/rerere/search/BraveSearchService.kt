@@ -40,7 +40,7 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -59,10 +59,11 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
                     "?q=${java.net.URLEncoder.encode(query, "UTF-8")}" +
                     "&count=${commonOptions.resultSize}"
 
+            val apiKey = nextSearchApiKey(serviceOptions.apiKey, serviceOptions.id)
             val request = Request.Builder()
                 .url(url)
                 .addHeader("Accept", "application/json")
-                .addHeader("X-Subscription-Token", serviceOptions.apiKey)
+                .addHeader("X-Subscription-Token", apiKey)
                 .build()
 
             val response = httpClient.newCall(request).await()
