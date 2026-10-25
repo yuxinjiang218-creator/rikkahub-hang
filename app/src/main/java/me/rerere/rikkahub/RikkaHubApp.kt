@@ -62,13 +62,18 @@ const val MEDIA_CREATION_NOTIFICATION_CHANNEL_ID = "media_creation"
 const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 
 class RikkaHubApp : Application() {
+    /** 本次启动是否刚从备份恢复过；只有恢复过才需要核对向量缓存 */
+    private var restoredFromBackup = false
+
     override fun onCreate() {
         super.onCreate()
         // Restore files and settings before eager Koin singletons or workers can access them.
+        var restored = false
         try {
-            val restored = runBlocking(Dispatchers.IO) {
+            restored = runBlocking(Dispatchers.IO) {
                 BackupManager.applyPendingRestore(this@RikkaHubApp, JsonInstant)
             }
+            restoredFromBackup = restored
             if (restored) {
                 Toast.makeText(this, R.string.backup_page_restore_success, Toast.LENGTH_LONG).show()
             }
@@ -162,6 +167,15 @@ class RikkaHubApp : Application() {
                 get<ConversationIndexer>().ensureFtsReady()
             }.onFailure {
                 Log.e(TAG, "ensureFtsReady failed", it)
+            }
+            // 恢复过备份的话先确认向量缓存能不能直接用：
+            // 备份里带了可用缓存就什么都不做，没带或对不上才补一次重建（重建要花钱，不能白花）
+            if (restoredFromBackup) {
+                runCatching {
+                    get<ConversationIndexer>().recoverAfterRestore()
+                }.onFailure {
+                    Log.e(TAG, "recoverAfterRestore failed", it)
+                }
             }
             // 向量部分要联网，交给带网络约束的 worker
             runCatching {

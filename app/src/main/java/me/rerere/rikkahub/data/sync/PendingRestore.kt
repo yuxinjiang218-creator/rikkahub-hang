@@ -2,6 +2,8 @@ package me.rerere.rikkahub.data.sync
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import me.rerere.rikkahub.data.index.SqliteVectorStore
+import me.rerere.rikkahub.data.index.VectorBackup
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -17,6 +19,7 @@ internal class PendingRestore(
     private val root: File,
     private val databaseFile: File,
     private val filesDir: File,
+    private val vectorDatabaseFile: File,
 ) {
     private val pending get() = File(root, "pending")
 
@@ -66,6 +69,11 @@ internal class PendingRestore(
             }
             val settings = File(pending, "settings.json")
             if (settings.isFile) restoreSettings(settings.readText())
+            // 搬来的向量缓存需要在第一次打开时核对一次（会话是否还在、块数是否对得上），
+            // 对不上就丢弃重建；标记放这里而不是装载前，是为了让核对发生在备份落地之后
+            if (entries.any { it.install && it.path == VectorBackup.ARCHIVE_DATABASE }) {
+                File(vectorDatabaseFile.parentFile, SqliteVectorStore.IMPORT_MARKER).writeText("1")
+            }
         } catch (e: Exception) {
             try {
                 rollback(entries)
@@ -101,6 +109,14 @@ internal class PendingRestore(
                 entries.add(0, RestoreEntry(path, install = false, hadOriginal = targetFile(path).exists()))
             }
         }
+        if (paths.contains(VectorBackup.ARCHIVE_DATABASE)) {
+            // 同理：新缓存是独立单文件，旧缓存的 sidecar 必须跟着旧文件走，
+            // 否则会配着新主文件读到脏页
+            for (suffix in listOf("-wal", "-shm", "-journal")) {
+                val path = "vector/${vectorDatabaseFile.name}$suffix"
+                entries.add(0, RestoreEntry(path, install = false, hadOriginal = targetFile(path).exists()))
+            }
+        }
         return entries
     }
 
@@ -127,6 +143,18 @@ internal class PendingRestore(
                 File(databaseFile.parentFile, name)
             }
             path.startsWith("files/") -> resolveInside(filesDir, path.removePrefix("files/"))
+            // 向量缓存只能落在它自己的位置：从备份包里指向别处都是非法的
+            path == VectorBackup.ARCHIVE_DATABASE -> vectorDatabaseFile
+            path.startsWith("vector/") -> {
+                val name = path.removePrefix("vector/")
+                require(name in listOf(
+                    vectorDatabaseFile.name, vectorDatabaseFile.name + "-wal",
+                    vectorDatabaseFile.name + "-shm", vectorDatabaseFile.name + "-journal"
+                )) {
+                    "Invalid restore vector path"
+                }
+                File(vectorDatabaseFile.parentFile, name)
+            }
             else -> error("Invalid restore path: $path")
         }
     }

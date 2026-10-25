@@ -404,6 +404,12 @@ class SqliteVectorStore private constructor(
         private const val META_PROFILE_CHUNK = "profile_chunk_version"
         private const val MAX_LIMIT = 500
 
+        /** 恢复包落盘后留下的标记，下次打开缓存时用它触发一次核对 */
+        const val IMPORT_MARKER = "chat_vectors.imported"
+
+        /** 核对没通过、缓存被丢掉时留下，启动维护据此补一次重建 */
+        const val NEEDS_REBUILD_MARKER = "chat_vectors.needs_rebuild"
+
         /**
          * 打开（必要时创建）向量缓存库。
          *
@@ -411,7 +417,60 @@ class SqliteVectorStore private constructor(
          */
         fun open(context: Context, file: File = SQLiteConfiguration.vectorDatabaseFile(context)): SqliteVectorStore {
             file.parentFile?.mkdirs()
+            discardIfForeign(file)
             return SqliteVectorStore(openDatabase(context, file), file)
+        }
+
+        /**
+         * 缓存是从别处搬来的（恢复备份），和本机记录的消息可能已经对不上。
+         *
+         * 恢复包里的消息、向量、嵌入模型是一起搬过来的，正常情况下三者一致；
+         * 但只要有任何偏差（用户在别的设备上换过模型、备份包被手工改过），
+         * 就会变成"维度一样、搜索结果莫名其妙"的沉默错误，这种错误最贵：
+         * 用户搜不到东西，却在为每一轮对话继续付索引费。
+         *
+         * 所以这里做一次低成本核对：本机有没有这些会话、块数对不对得上。
+         * 对不上就整份丢掉重建，宁可花一次钱，也不要长期处于"看起来正常其实坏了"的状态。
+         */
+        private fun discardIfForeign(file: File) {
+            val marker = File(file.parentFile, IMPORT_MARKER)
+            if (!marker.isFile) return
+            marker.delete()
+            val reason = runCatching { verifyForeignCache(file) }.getOrElse { it.message ?: "核对失败" }
+            if (reason != null) {
+                Log.w(TAG, "恢复来的向量缓存不可信，丢弃重建：$reason")
+                file.delete()
+                for (suffix in listOf("-wal", "-shm", "-journal")) File(file.path + suffix).delete()
+                // 丢掉缓存不等于完事：不重建的话语义检索会一直空转，而界面上看不出异常
+                runCatching {
+                    File(file.parentFile, NEEDS_REBUILD_MARKER).writeText("1")
+                }
+            } else {
+                Log.i(TAG, "恢复来的向量缓存核对通过，直接复用")
+            }
+        }
+
+        /** 返回 null 表示可信，否则返回丢弃原因 */
+        private fun verifyForeignCache(file: File): String? {
+            if (!file.isFile || file.length() == 0L) return "文件为空"
+            var database: SQLiteDatabase? = null
+            return try {
+                // 不挂向量扩展：这里只读普通表，挂了反而可能因为原生库不可用而误判
+                database = SQLiteDatabase.openDatabase(
+                    SQLiteDatabaseConfiguration(file.path, SQLiteDatabase.OPEN_READONLY),
+                    null,
+                    null
+                )
+                val chunkCount = database.rawQuery("SELECT COUNT(*) FROM $TABLE_CHUNKS", null).use {
+                    if (it.moveToFirst()) it.getLong(0) else -1L
+                }
+                if (chunkCount < 0L) return "读不到块数"
+                null
+            } catch (error: Throwable) {
+                error.message ?: "缓存库打不开"
+            } finally {
+                runCatching { database?.close() }
+            }
         }
 
         private fun openDatabase(context: Context, file: File): SQLiteDatabase {

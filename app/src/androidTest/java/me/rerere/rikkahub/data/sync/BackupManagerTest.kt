@@ -173,6 +173,33 @@ class BackupManagerTest {
     private fun probe(database: AppDatabase): String = database.openHelper.readableDatabase
         .query("SELECT text FROM backup_probe").use { check(it.moveToFirst()); it.getString(0) }
 
+    @Test fun vectorCacheRidesAlongWithTheDatabaseAndSurvivesRestore() = runBlocking {
+        // 造一份假的向量缓存：只要能确认它被原样搬进备份、又原样搬回来就够
+        val liveVector = me.rerere.rikkahub.data.db.SQLiteConfiguration.vectorDatabaseFile(context)
+        liveVector.parentFile!!.mkdirs()
+        io.requery.android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(liveVector, null).use { db ->
+            db.execSQL("CREATE TABLE probe (payload BLOB)")
+            db.execSQL("INSERT INTO probe VALUES (X'00ff10')")
+        }
+
+        val archive = manager.createBackup(includeDatabase = true, includeFiles = false)
+        ZipFile(archive).use { zip ->
+            assertTrue(
+                "备份包里应该有向量缓存",
+                zip.getEntry(me.rerere.rikkahub.data.index.VectorBackup.ARCHIVE_DATABASE) != null
+            )
+        }
+
+        liveVector.delete()
+        manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
+        assertTrue(BackupManager.applyPendingRestore(context, JsonInstant))
+        assertTrue("向量缓存应该被恢复", liveVector.isFile)
+        assertTrue(
+            "恢复后应留下核对标记，避免直接信任外来缓存",
+            File(liveVector.parentFile, me.rerere.rikkahub.data.index.SqliteVectorStore.IMPORT_MARKER).isFile
+        )
+    }
+
     private fun addFile(zip: ZipOutputStream, name: String, file: File) {
         zip.putNextEntry(ZipEntry(name))
         file.inputStream().use { it.copyTo(zip) }

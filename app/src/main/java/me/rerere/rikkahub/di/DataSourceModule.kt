@@ -161,7 +161,7 @@ val dataSourceModule = module {
     single { IndexStatusTracker() }
 
     single {
-        ConversationIndexer(get(), get(), get(), get(), get(), get())
+        ConversationIndexer(get(), get(), get(), get(), get(), get(), get())
     }
 
     single { McpManager(settingsStore = get(), appScope = get(), filesManager = get()) }

@@ -16,10 +16,12 @@ class PendingRestoreTest {
     @get:Rule val temporary = TemporaryFolder()
 
     private fun restore() = PendingRestore(
-        File(temporary.root, "restore"), database(), File(temporary.root, "files")
+        File(temporary.root, "restore"), database(), File(temporary.root, "files"), vector()
     )
 
     private fun database() = File(temporary.root, "databases/rikka_hub")
+
+    private fun vector() = File(temporary.root, "vector/chat_vectors.db")
 
     private fun write(file: File, contents: String): File {
         file.parentFile!!.mkdirs()

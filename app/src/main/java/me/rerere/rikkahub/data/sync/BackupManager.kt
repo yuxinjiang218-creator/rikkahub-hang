@@ -18,11 +18,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
-import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.SQLiteConfiguration
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.MediaCreationFiles
+import me.rerere.rikkahub.data.index.VectorBackup
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -56,6 +57,10 @@ class BackupManager(
                     val snapshot = File(staging, SQLiteConfiguration.DATABASE_NAME)
                     DatabaseBackup.createSnapshot(database.openHelper.writableDatabase, snapshot)
                     addFile(zip, snapshot, DatabaseBackup.ARCHIVE_DATABASE)
+                    // 向量缓存是已经付过费的嵌入结果，跟着主库一起走；
+                    // 没有缓存或快照失败就不带，恢复后重新索引即可，不阻断备份
+                    VectorBackup.createSnapshot(context, File(staging, VectorBackup.ARCHIVE_DATABASE))
+                        ?.let { addFile(zip, it, VectorBackup.ARCHIVE_DATABASE) }
                 }
                 if (includeFiles) {
                     for (folder in ATTACHMENT_FOLDERS) {
@@ -104,6 +109,10 @@ class BackupManager(
                                 DatabaseBackup.ARCHIVE_DATABASE -> if (includeDatabase) stagedDatabase else null
                                 DatabaseBackup.WAL -> if (includeDatabase) stagedWal else null
                                 DatabaseBackup.SHM -> null // Rebuilt by SQLite; never restore shared-memory state.
+                                // 向量缓存跟着主库走：没选主库就没有对应的消息可索引，单独恢复它没有意义
+                                VectorBackup.ARCHIVE_DATABASE -> if (includeDatabase) {
+                                    File(payload, VectorBackup.ARCHIVE_DATABASE)
+                                } else null
                                 else -> if (includeFiles && isAttachment(entry.name)) {
                                     PendingRestore.resolveInside(File(payload, "files"), entry.name)
                                 } else null
@@ -189,6 +198,7 @@ class BackupManager(
             root = File(context.noBackupFilesDir, "backup-restore"),
             databaseFile = context.getDatabasePath(SQLiteConfiguration.DATABASE_NAME),
             filesDir = context.filesDir,
+            vectorDatabaseFile = SQLiteConfiguration.vectorDatabaseFile(context),
         )
 
         /** Must finish before Koin, Room, SettingsStore or any background consumers are initialized. */

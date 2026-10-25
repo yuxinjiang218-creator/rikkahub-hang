@@ -1,15 +1,18 @@
 package me.rerere.rikkahub.data.index
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.db.SQLiteConfiguration
 import me.rerere.rikkahub.data.db.dao.ConversationIndexTaskDAO
 import me.rerere.rikkahub.data.db.entity.ConversationIndexTaskEntity
 import me.rerere.rikkahub.data.db.entity.IndexTaskOp
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 
@@ -22,6 +25,7 @@ import kotlin.uuid.Uuid
  * - 只有版本没变才删任务，删任务保留 tombstone 语义。
  */
 class ConversationIndexer(
+    private val context: Context,
     private val conversationRepository: ConversationRepository,
     private val conversationIndexTaskDao: ConversationIndexTaskDAO,
     private val settingsStore: SettingsStore,
@@ -40,6 +44,45 @@ class ConversationIndexer(
     /** FTS 提取规则升级后需要重建，由 worker 在索引前顺手做掉 */
     suspend fun ensureFtsReady() = withContext(Dispatchers.IO) {
         conversationRepository.ensureFtsIndexUpToDate()
+    }
+
+    /**
+     * 恢复备份后把向量索引拉回可用状态。
+     *
+     * 两种情况要分开处理：
+     * - 备份带了缓存且核对通过：什么都不用做，已经能直接搜。
+     * - 缓存被丢弃（消息或模型对不上）或备份本来就没带：必须补一次重建。
+     *   不补的话语义检索会一直空转，而界面上看不出来——用户只会以为“搜不到是没聊过”。
+     *
+     * 只在“待办为空”时才排队，避免把正在跑的增量任务冲掉。
+     */
+    suspend fun recoverAfterRestore() = withContext(Dispatchers.IO) {
+        val rebuildMarker = File(
+            SQLiteConfiguration.vectorDatabaseFile(context).parentFile,
+            SqliteVectorStore.NEEDS_REBUILD_MARKER
+        )
+        // 必须先开一次缓存库：备份搬来的缓存就是在这个时机被核对的，
+        // 核对不过才会留下重建标记。先读标记等于永远读不到。
+        val stats = vectorIndexProvider.statsOrNull()
+        val discarded = rebuildMarker.isFile
+        if (discarded) rebuildMarker.delete()
+
+        if (conversationIndexTaskDao.count() > 0) {
+            Log.i(TAG, "已有待处理索引任务，恢复后的重建交给队列")
+            return@withContext
+        }
+        if (!discarded && (stats?.chunkCount ?: 0) > 0) {
+            Log.i(TAG, "恢复后向量缓存可用，不重建")
+            return@withContext
+        }
+        val settings = settingsStore.awaitLoaded()
+        if (!settings.embeddingIndex.enabled) return@withContext
+        if (conversationRepository.getAllConversationIds().isEmpty()) return@withContext
+        Log.i(
+            TAG,
+            if (discarded) "恢复后向量缓存被丢弃，补一次重建" else "恢复后没有可用向量缓存，补一次重建"
+        )
+        rebuildAll()
     }
 
     /**
