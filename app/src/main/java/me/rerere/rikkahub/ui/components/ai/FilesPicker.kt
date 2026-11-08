@@ -407,11 +407,11 @@ internal fun FilesPicker(
 
     // Compress Context Dialog
     if (showCompressDialog) {
-        CompressContextDialog(onDismiss = {
-            onShowCompressDialogChange(false)
-            onDismiss()
-        },
-            initialKeepRecentMessages = settings.manualCompressKeepRecentMessages,
+        CompressContextDialog(
+            onDismiss = {
+                onShowCompressDialogChange(false)
+                onDismiss()
+            },
             onConfirm = onCompressContext,
         )
     }

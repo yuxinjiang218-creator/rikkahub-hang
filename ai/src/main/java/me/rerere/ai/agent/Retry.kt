@@ -27,8 +27,8 @@ data class RetryPolicy(
     companion object {
         val NONE = RetryPolicy(maxRetries = 0)
 
-        /** 网络自动重试：最多 3 次，间隔 1s、2s、4s */
-        val NETWORK = RetryPolicy(maxRetries = 3)
+        /** 网络自动重试：最多 5 次，间隔 1s、2s、4s、8s、16s，总等待 31 秒 */
+        val NETWORK = RetryPolicy(maxRetries = 5)
     }
 }
 

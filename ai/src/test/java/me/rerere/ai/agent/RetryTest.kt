@@ -46,7 +46,7 @@ class RetryTest {
         }.exceptionOrNull()
 
         assertTrue(error is IOException)
-        assertEquals(4, calls)
+        assertEquals("首次请求加 5 次重试", 6, calls)
     }
 
     @Test
@@ -137,5 +137,27 @@ class RetryTest {
         }.exceptionOrNull()
         assertTrue(error is HttpException)
         assertEquals(1, calls)
+    }
+
+    @Test
+    fun `network policy retries five times before giving up`() = runTest {
+        var calls = 0
+        val attempts = mutableListOf<RetryAttempt>()
+
+        val error = runCatching {
+            withRetry(RetryPolicy.NETWORK, onRetry = { attempts += it }) {
+                calls++
+                throw IOException("timeout")
+            }
+        }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+        assertEquals("首次请求加 5 次重试", 6, calls)
+        assertEquals(listOf(1, 2, 3, 4, 5), attempts.map { it.retry })
+        assertEquals(
+            listOf(1.seconds, 2.seconds, 4.seconds, 8.seconds, 16.seconds),
+            attempts.map { it.delay },
+        )
+        assertEquals("总等待 31 秒", 31_000L, currentTime)
     }
 }
