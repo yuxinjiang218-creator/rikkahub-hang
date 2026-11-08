@@ -988,6 +988,8 @@ class ChatService(
                         retainedMessageIds = retainedMessages.map { it.id },
                     ) ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
                     updated.copy(chatSuggestions = emptyList())
+                }
+                session.flush()
             } finally {
                 // 补上压缩期间收到的通知和消息
                 session.isCompressing = false
