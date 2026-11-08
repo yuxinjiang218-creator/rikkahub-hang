@@ -33,7 +33,6 @@ class SettingVM(
             initialValue = settingsStore.settingsFlow.value.takeUnless { it.init }
                 ?: Settings(init = true, providers = emptyList()),
         )
-
         .stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
     /** 换向量模型前等待用户确认；null 表示没有待确认的改动 */
