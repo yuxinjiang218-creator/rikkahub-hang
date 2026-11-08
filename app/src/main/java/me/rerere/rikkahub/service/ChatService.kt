@@ -986,7 +986,10 @@ class ChatService(
                         modelId = configuredCompressionModel?.id,
                         usesChatModel = usesChatModel,
                         retainedMessageIds = retainedMessages.map { it.id },
-                    ) ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
+                    )
+                        ?: throw IllegalStateException(
+                            context.getString(R.string.chat_page_compress_conversation_changed)
+                        )
                     updated.copy(chatSuggestions = emptyList())
                 }
                 session.flush()
