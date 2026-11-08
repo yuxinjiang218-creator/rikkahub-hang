@@ -226,5 +226,4 @@ private val STORED_KEYS = setOf(
     "quick_messages",
     "embedding_index",
     "backup_reminder_config",
-    "sponsor_alert_dismissed_at",
 )
