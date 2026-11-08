@@ -89,7 +89,6 @@ data class Settings(
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     // 聊天历史语义检索（向量索引）的设置，默认关闭
     val embeddingIndex: EmbeddingIndexSetting = EmbeddingIndexSetting(),
-    val sponsorAlertDismissedAt: Int = 0,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

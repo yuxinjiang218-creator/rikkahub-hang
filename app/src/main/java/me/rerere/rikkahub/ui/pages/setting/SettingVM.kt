@@ -34,7 +34,6 @@ class SettingVM(
                 ?: Settings(init = true, providers = emptyList()),
         )
 
-    val launchCount: StateFlow<Int> = settingsStore.launchCountFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
     /** 换向量模型前等待用户确认；null 表示没有待确认的改动 */

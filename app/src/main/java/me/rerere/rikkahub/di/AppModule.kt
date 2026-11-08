@@ -6,6 +6,7 @@ import me.rerere.rikkahub.data.ai.ChatRequestFactory
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
@@ -98,6 +99,14 @@ val appModule = module {
             mcpManager = get(),
             skillManager = get(),
             workspaceRepository = get(),
+            backgroundShellManager = get(),
+        )
+    }
+
+    single {
+        BackgroundShellManager(
+            context = get(),
+            workspaceRepository = get(),
         )
     }
 
@@ -126,7 +135,8 @@ val appModule = module {
             metaGenerator = get(),
             mcpManager = get(),
             filesManager = get(),
-            folderRepository = get()
+            folderRepository = get(),
+            backgroundShellManager = get(),
         )
     }
 

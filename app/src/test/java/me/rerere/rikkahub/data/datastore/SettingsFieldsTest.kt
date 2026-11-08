@@ -170,7 +170,6 @@ private val SAMPLE = Settings(
     webServerLocalhostOnly = true,
     embeddingIndex = EmbeddingIndexSetting(enabled = true, modelId = id(40)),
     backupReminderConfig = BackupReminderConfig(enabled = true),
-    sponsorAlertDismissedAt = 7,
 )
 
 private val STORED_KEYS = setOf(

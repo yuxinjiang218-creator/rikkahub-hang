@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -78,6 +77,8 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceButtons
 import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceLabel
+import me.rerere.rikkahub.ui.components.ui.permission.LocalNetworkPermissionCard
+import me.rerere.rikkahub.ui.components.ui.permission.rememberLocalNetworkPermissionState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
@@ -96,34 +97,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
-
-    if (!settings.init && launchCount > 100 && (launchCount - settings.sponsorAlertDismissedAt) >= 50) {
-        AlertDialog(
-            onDismissRequest = {
-                vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
-            },
-            icon = { Icon(HugeIcons.WavingHand01, null) },
-            title = { Text(stringResource(R.string.setting_page_sponsor_alert_title)) },
-            text = { Text(stringResource(R.string.setting_page_sponsor_alert_desc)) },
-            confirmButton = {
-                Button(onClick = {
-                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
-                    navController.navigate(Screen.SettingDonate)
-                }) {
-                    Text(stringResource(R.string.setting_page_sponsor_alert_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
-                }) {
-                    Text(stringResource(R.string.setting_page_sponsor_alert_dismiss))
-                }
-            },
-        )
-    }
+    val localNetworkPermission = rememberLocalNetworkPermissionState()
 
     Scaffold(
         topBar = {
@@ -151,6 +126,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     ProviderConfigWarningCard(
                         onClick = { navController.navigate(Screen.SettingProvider) }
                     )
+                }
+            }
+
+            if (localNetworkPermission?.allRequiredPermissionsGranted == false) {
+                item("localNetworkPermission") {
+                    LocalNetworkPermissionCard(permissionState = localNetworkPermission)
                 }
             }
 
