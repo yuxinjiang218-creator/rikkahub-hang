@@ -79,6 +79,8 @@ class SettingsFieldsTest {
         assertEquals(8080, settings.webServerPort)
         assertEquals(null, settings.compressModelId)
         assertEquals(6, settings.manualCompressKeepRecentMessages)
+        // 自动压缩要真花钱，新装不默认开
+        assertEquals(false, settings.enableAutoCompress)
     }
 
     @Test
@@ -141,7 +143,7 @@ private val SAMPLE = Settings(
     compressModelId = id(6),
     compressPrompt = "compress",
     manualCompressKeepRecentMessages = 9,
-    enableAutoCompress = false,
+    enableAutoCompress = true,
     autoCompressThreshold = 0.9f,
     assistantId = id(20),
     providers = listOf(ProviderSetting.OpenAI(id = id(31), name = "Provider")),
