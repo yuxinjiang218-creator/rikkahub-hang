@@ -300,10 +300,8 @@
               "conversation_id",
               "node_index"
             ],
-            "orders": [
-              "ASC",
-              "ASC"
-            ]
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_message_node_conversation_id_node_index` ON `${TABLE_NAME}` (`conversation_id`, `node_index`)"
           }
         ],
         "foreignKeys": [
