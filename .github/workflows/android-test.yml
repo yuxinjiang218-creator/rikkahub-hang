@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   instrumented:
-    name: 向量索引（${{ matrix.name }}）
+    name: 仪器测试（${{ matrix.name }}）
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -123,7 +123,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: 运行向量索引测试
+      # 按包跑，不列具体类名：以前这里是硬编码的两三个类，新加的测试（数据库迁移、备份恢复等）
+      # 不加进列表就永远不跑，等于白写。现在按包发现，新增测试自动纳入。
+      - name: 运行仪器测试
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -132,7 +134,60 @@ jobs:
           # 16KB 页镜像需要较新的系统镜像与较新的模拟器
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: chmod +x gradlew && ./gradlew :app:connectedGithubDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.data.index.SqliteVectorStoreTest,me.rerere.rikkahub.data.index.ConversationIndexTaskTest --stacktrace
+          script: |
+            chmod +x gradlew
+            # androidTest 里的类一共 13 个，以前 CI 只跑硬编码的两个，其余从没跑过。
+            # 这里逐个包跑，一个包失败后面继续，最后统一汇总，免得一个包的问题遮住其他包。
+            failed=""
+            for pkg in \
+              me.rerere.rikkahub.data.db \
+              me.rerere.rikkahub.data.db.dao \
+              me.rerere.rikkahub.data.db.fts \
+              me.rerere.rikkahub.data.db.migrations \
+              me.rerere.rikkahub.data.index \
+              me.rerere.rikkahub.data.sync \
+              me.rerere.rikkahub.data.repository; do
+              echo "===== $pkg ====="
+              ./gradlew :app:connectedGithubDebugAndroidTest \
+                -Pandroid.testInstrumentationRunnerArguments.package=$pkg \
+                --stacktrace || failed="$failed $pkg"
+            done
+            # 留给重跑步骤：只重试这些包，不用把全量再跑一遍
+            echo "$failed" | tr ' ' '\n' | sed '/^$/d' > /tmp/failed-packages.txt
+            if [ -n "$failed" ]; then
+              echo "失败的包:$failed" >&2
+              exit 1
+            fi
+
+      # 模拟器会偶发崩在图形层（日志里是 Failed to bind to texture / invalid color buffer，
+      # 外加一串 adb 退出码 1），测试连用例都没跑到就整任务失败。这和被测代码无关。
+      # 只重跑真正失败的包；真有问题的话第二次照样失败，不会掩盖。
+      - name: 失败的包重跑一次
+        if: failure()
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.abi }}
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            chmod +x gradlew
+            if [ ! -s /tmp/failed-packages.txt ]; then
+              echo "没有记录到失败的包，说明是模拟器本身没起来，重跑全量"
+              echo "me.rerere.rikkahub.data" > /tmp/failed-packages.txt
+            fi
+            failed=""
+            while IFS= read -r pkg; do
+              echo "===== 重跑 $pkg ====="
+              ./gradlew :app:connectedGithubDebugAndroidTest \
+                -Pandroid.testInstrumentationRunnerArguments.package=$pkg \
+                --stacktrace || failed="$failed $pkg"
+            done < /tmp/failed-packages.txt
+            if [ -n "$failed" ]; then
+              echo "重跑仍然失败:$failed" >&2
+              exit 1
+            fi
 
       - name: 上传测试报告
         if: always()
