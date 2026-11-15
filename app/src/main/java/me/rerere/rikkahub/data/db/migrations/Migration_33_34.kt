@@ -15,8 +15,7 @@ private const val TAG = "Migration_33_34"
  *
  * 这里逐列判断再补，是因为同一条路径上可能来两种库：
  * - 装过 fork 3.1.1/3.1.2 的：库停在 fork 的 33，两列都没有；
- * - 装过上游 3.1.1 的：库停在上游的 32，两列已经在（但版本号比 33 小），
- *   走到这里时直接 ALTER 会 duplicate column 报错。
+ * - 装过上游 3.x 的：走 32→33→34 上来，33 的 schema 里已经有这两列，直接 ALTER 会 duplicate column 报错。
  */
 val Migration_33_34 = object : Migration(33, 34) {
     override fun migrate(db: SupportSQLiteDatabase) {

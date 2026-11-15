@@ -55,6 +55,7 @@ class SettingsFieldsTest {
         assertEquals(false, stored["dynamic_color"])
         assertEquals(9090, stored["web_server_port"])
         assertEquals(1.5f, stored["default_tts_playback_speed"])
+        assertEquals(0.9f, stored["auto_compress_threshold"])
         assertEquals("title", stored["title_prompt"])
         assertEquals("00000000-0000-0000-0000-000000000001", stored["chat_model"])
         assertEquals("LOW", stored["fast_model_reasoning_level"])
@@ -140,6 +141,8 @@ private val SAMPLE = Settings(
     compressModelId = id(6),
     compressPrompt = "compress",
     manualCompressKeepRecentMessages = 9,
+    enableAutoCompress = false,
+    autoCompressThreshold = 0.9f,
     assistantId = id(20),
     providers = listOf(ProviderSetting.OpenAI(id = id(31), name = "Provider")),
     assistants = listOf(Assistant(id = id(20), name = "Assistant")),
@@ -199,6 +202,8 @@ private val STORED_KEYS = setOf(
     "compress_model",
     "compress_prompt",
     "manual_compress_keep_recent_messages",
+    "enable_auto_compress",
+    "auto_compress_threshold",
     "providers",
     "select_assistant",
     "assistants",

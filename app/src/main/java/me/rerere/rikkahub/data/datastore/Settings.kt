@@ -54,6 +54,10 @@ data class Settings(
     val translateTargetLanguage: String = "zh-CN",
     val enableSuggestion: Boolean = true,
     val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
+    // 回复结束后上下文占用达到聊天模型上下文窗口的 autoCompressThreshold 时自动压缩历史。
+    // fork 默认关闭：压缩要调一次模型（真花钱），什么时候花这笔钱交给用户自己决定
+    val enableAutoCompress: Boolean = false,
+    val autoCompressThreshold: Float = 0.8f,
     val ocrModelId: Uuid = Uuid.random(),
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
     // null 表示压缩时跟随当前会话模型；有值时使用独立的压缩模型

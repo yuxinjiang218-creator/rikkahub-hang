@@ -130,6 +130,10 @@ class SettingsStore internal constructor(
         val COMPRESS_PROMPT = stringPreferencesKey("compress_prompt")
         val MANUAL_COMPRESS_KEEP_RECENT_MESSAGES = intPreferencesKey("manual_compress_keep_recent_messages")
 
+        // 自动压缩
+        val ENABLE_AUTO_COMPRESS = booleanPreferencesKey("enable_auto_compress")
+        val AUTO_COMPRESS_THRESHOLD = floatPreferencesKey("auto_compress_threshold")
+
         // 提供商
         val PROVIDERS = stringPreferencesKey("providers")
 
